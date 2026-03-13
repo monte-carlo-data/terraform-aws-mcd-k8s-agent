@@ -3,13 +3,11 @@
 variable "region" {
   description = "The AWS region to deploy resources into."
   type        = string
-  default     = "us-east-2"
 }
 
 variable "backend_service_url" {
   description = "The Monte Carlo backend service URL. Obtain this from Monte Carlo support."
   type        = string
-  default     = "https://artemis.dev.getmontecarlo.com"
 }
 
 # --- Cluster Configuration ---

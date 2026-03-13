@@ -109,7 +109,6 @@ module "eks" {
 resource "aws_s3_bucket" "mcd_agent_store" {
   count  = var.storage.create_bucket ? 1 : 0
   bucket = local.mcd_agent_store_name
-  force_destroy = true
 }
 
 resource "aws_s3_bucket_lifecycle_configuration" "mcd_agent_store_lifecycle" {
