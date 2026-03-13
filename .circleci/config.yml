@@ -1,0 +1,21 @@
+version: 2.1
+
+jobs:
+  run-sanity-check:
+    docker:
+      - image: docker.mirror.hashicorp.services/hashicorp/terraform:light
+    steps:
+      - checkout
+      - run:
+          name: Install dependencies
+          command: apk add --update make
+      - run:
+          name: Format and validate
+          command: make sanity-check
+
+workflows:
+  version: 2
+
+  validate:
+    jobs:
+      - run-sanity-check
