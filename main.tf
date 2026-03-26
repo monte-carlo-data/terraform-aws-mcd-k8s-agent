@@ -418,19 +418,9 @@ locals {
     }
 
     container = {
-      port                 = var.agent.container_port
-      backendServiceUrl    = var.backend_service_url
-      gunicornWorkers      = var.agent.gunicorn_workers
-      gunicornThreads      = var.agent.gunicorn_threads
-      storageBucketName    = local.effective_bucket_name
-      storageType          = "S3"
-      opsRunnerThreadCount = tostring(var.agent.ops_runner_thread_count)
-      publisherThreadCount = tostring(var.agent.publisher_thread_count)
-    }
-
-    service = {
-      port        = var.agent.service_port
-      annotations = var.helm.service_annotations
+      backendServiceUrl = var.backend_service_url
+      storageBucketName = local.effective_bucket_name
+      storageType       = "S3"
     }
 
     secretStore = {

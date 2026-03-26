@@ -13,6 +13,8 @@ This module deploys the [Monte Carlo](https://www.montecarlodata.com/) container
 
 > **Finding your `backend_service_url`:** Navigate to the [Account Information](https://getmontecarlo.com/account-info#agent-service) page in Monte Carlo. Under the **Agent Service** section, copy the **Public endpoint** (or **Private link endpoint** if using private link). Use this value for the `backend_service_url` variable in the examples below.
 
+For more complete configurations, see the [`examples`](./examples/) directory.
+
 ### Full deployment (new cluster)
 
 ```hcl
