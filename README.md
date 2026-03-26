@@ -11,6 +11,8 @@ This module deploys the [Monte Carlo](https://www.montecarlodata.com/) container
 
 ## Usage
 
+> **Finding your `backend_service_url`:** Navigate to the [Account Information](https://getmontecarlo.com/account-info#agent-service) page in Monte Carlo. Under the **Agent Service** section, copy the **Public endpoint** (or **Private link endpoint** if using private link). Use this value for the `backend_service_url` variable in the examples below.
+
 ### Full deployment (new cluster)
 
 ```hcl
@@ -18,7 +20,7 @@ module "mcd_agent" {
   source = "monte-carlo-data/mcd-agent-k8s/aws"
 
   region              = "us-east-1"
-  backend_service_url = "https://your-instance.getmontecarlo.com"
+  backend_service_url = "<backend_service_url>"
 }
 ```
 
@@ -29,7 +31,7 @@ module "mcd_agent" {
   source = "monte-carlo-data/mcd-agent-k8s/aws"
 
   region              = "us-east-1"
-  backend_service_url = "https://your-instance.getmontecarlo.com"
+  backend_service_url = "<backend_service_url>"
 
   networking = {
     create_vpc                  = false
@@ -46,7 +48,7 @@ module "mcd_agent" {
   source = "monte-carlo-data/mcd-agent-k8s/aws"
 
   region              = "us-east-1"
-  backend_service_url = "https://your-instance.getmontecarlo.com"
+  backend_service_url = "<backend_service_url>"
 
   cluster = {
     create                = false
@@ -66,7 +68,7 @@ module "mcd_agent" {
   source = "monte-carlo-data/mcd-agent-k8s/aws"
 
   region              = "us-east-1"
-  backend_service_url = "https://your-instance.getmontecarlo.com"
+  backend_service_url = "<backend_service_url>"
 
   helm = {
     deploy_agent = false
