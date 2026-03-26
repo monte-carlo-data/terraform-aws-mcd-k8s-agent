@@ -95,10 +95,10 @@ variable "integration_secrets" {
 variable "agent" {
   description = "Agent container configuration."
   type = object({
-    namespace               = optional(string, "mcd-agent")
-    image                   = optional(string, "montecarlodata/agent:latest-generic")
-    replica_count           = optional(number, 1)
-    remote_upgradable       = optional(bool, true)
+    namespace         = optional(string, "mcd-agent")
+    image             = optional(string, "montecarlodata/agent:latest-generic")
+    replica_count     = optional(number, 1)
+    remote_upgradable = optional(bool, true)
   })
   default = {}
 }
@@ -113,8 +113,8 @@ variable "helm" {
     chart_repository                  = optional(string, "oci://registry-1.docker.io/montecarlodata")
     chart_name                        = optional(string, "generic-agent-helm")
     chart_version                     = optional(string, "0.1.0")
-    enabled_logs_collector    = optional(bool, true)
-    enabled_metrics_collector = optional(bool, true)
+    enabled_logs_collector            = optional(bool, true)
+    enabled_metrics_collector         = optional(bool, true)
   })
   default = {}
 }
