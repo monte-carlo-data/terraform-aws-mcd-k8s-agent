@@ -154,7 +154,7 @@ module "mcd_agent" {
   }
 
   private_link = {
-    vpce_service_name = "com.amazonaws.vpce.us-east-1.vpce-svc-09b9b54c8fa794998"
+    vpce_service_name = "<vpce_service_name>"
     region            = "us-east-1"
   }
 }
