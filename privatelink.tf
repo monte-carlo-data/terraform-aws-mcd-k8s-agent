@@ -26,19 +26,13 @@ resource "aws_security_group" "monte_carlo_vpce" {
     cidr_blocks = [data.aws_vpc.selected[0].cidr_block]
   }
 
-  egress {
-    description = "Allow all outbound"
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
 }
 
 resource "aws_vpc_endpoint" "monte_carlo" {
   count             = var.private_link != null ? 1 : 0
   vpc_id            = local.effective_vpc_id
   service_name      = var.private_link.vpce_service_name
+  service_region    = var.private_link.region
   vpc_endpoint_type = "Interface"
 
   subnet_ids         = local.effective_private_subnet_ids

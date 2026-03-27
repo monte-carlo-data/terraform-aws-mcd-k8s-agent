@@ -6,7 +6,7 @@ variable "region" {
 }
 
 variable "backend_service_url" {
-  description = "The Monte Carlo backend service URL. Obtain this from Monte Carlo -> Account information -> Agent Service -> Private link endpoint."
+  description = "The Monte Carlo backend service URL. Obtain this from Monte Carlo -> Account information -> Agent Service -> Public endpoint (or Private link endpoint if using PrivateLink)."
   type        = string
 }
 
