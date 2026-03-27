@@ -8,6 +8,7 @@ This module deploys the [Monte Carlo](https://www.montecarlodata.com/) container
 - [AWS CLI](https://aws.amazon.com/cli/) with [authentication](https://registry.terraform.io/providers/hashicorp/aws/latest/docs#authentication-and-configuration)
 - [kubectl](https://kubernetes.io/docs/tasks/tools/) for cluster access
 - A Monte Carlo account with agent credentials (mcd_id and mcd_token)
+- **(PrivateLink only)** Before deploying with `private_link` enabled, contact Monte Carlo support to request that your AWS account be allowed for PrivateLink. You must wait for Monte Carlo to confirm the account has been allowed before proceeding with deployment.
 
 ## Usage
 
@@ -131,6 +132,35 @@ output "helm_values" {
   sensitive = true
 }
 ```
+
+### AWS PrivateLink (optional)
+
+To route traffic to the Monte Carlo backend over AWS PrivateLink instead of the public internet, add the `private_link` block. The region and VPCE service name can be obtained from Monte Carlo -> Account information -> Agent Service -> AWS PrivateLink. When using PrivateLink, `backend_service_url` must use the private link endpoint (it must contain `.privatelink.`).
+
+```hcl
+module "mcd_agent" {
+  source = "monte-carlo-data/mcd-agent-k8s/aws"
+
+  region              = "us-east-1"
+  backend_service_url = "https://artemis.privatelink.getmontecarlo.com"
+
+  token_credentials = {
+    mcd_id    = var.mcd_id
+    mcd_token = var.mcd_token
+  }
+
+  helm = {
+    chart_version = "0.0.2"
+  }
+
+  private_link = {
+    vpce_service_name = "com.amazonaws.vpce.us-east-1.vpce-svc-09b9b54c8fa794998"
+    region            = "us-east-1"
+  }
+}
+```
+
+This creates an interface VPC endpoint, a security group allowing HTTPS from the VPC CIDR, and a Route53 private hosted zone with an alias record pointing to the endpoint. See [Prerequisites](#prerequisites) for the required allowlisting step and [Approve PrivateLink connection](#approve-privatelink-connection-optional) for post-deployment steps.
 
 ## After Deployment
 
