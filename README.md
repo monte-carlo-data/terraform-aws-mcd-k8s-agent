@@ -4,7 +4,7 @@ This module deploys the [Monte Carlo](https://www.montecarlodata.com/) container
 
 ## Prerequisites
 
-- [Terraform](https://www.terraform.io/downloads.html) >= 1.3
+- [Terraform](https://www.terraform.io/downloads.html) >= 1.9
 - [AWS CLI](https://aws.amazon.com/cli/) with [authentication](https://registry.terraform.io/providers/hashicorp/aws/latest/docs#authentication-and-configuration)
 - [kubectl](https://kubernetes.io/docs/tasks/tools/) for cluster access
 - A Monte Carlo account with agent credentials (mcd_id and mcd_token)
@@ -17,6 +17,35 @@ This module deploys the [Monte Carlo](https://www.montecarlodata.com/) container
 
 For more complete configurations, see the [`examples`](./examples/) directory.
 
+### Agent token secret
+
+You must configure the agent token secret using one of two options:
+
+**Option 1 — Provide credentials (recommended):** The module creates and populates the secret in AWS Secrets Manager.
+
+```hcl
+token_credentials = {
+  mcd_id    = "your-mcd-id"
+  mcd_token = "your-mcd-token"
+}
+```
+
+**Option 2 — Use a pre-existing secret:** Point the module to an existing secret in AWS Secrets Manager. The secret value must be a JSON object with the following format:
+
+```json
+{
+  "mcd_id": "YOUR_MCD_ID",
+  "mcd_token": "YOUR_MCD_TOKEN"
+}
+```
+
+```hcl
+token_secret = {
+  create = false
+  name   = "my-existing-secret-name"
+}
+```
+
 ### Full deployment (new cluster)
 
 ```hcl
@@ -25,6 +54,11 @@ module "mcd_agent" {
 
   region              = "us-east-1"
   backend_service_url = "<backend_service_url>"
+
+  token_credentials = {
+    mcd_id    = var.mcd_id
+    mcd_token = var.mcd_token
+  }
 
   helm = {
     chart_version = "0.0.2"
@@ -100,15 +134,49 @@ output "helm_values" {
 
 ## After Deployment
 
-1. Update the agent token in AWS Secrets Manager:
+Configure kubectl access:
+```bash
+aws eks update-kubeconfig --name <cluster_name> --region <region>
+```
+
+## Troubleshooting
+
+### Checking agent logs
+
+Verify the agent pod is running and check its logs:
+
+```bash
+kubectl get pods -n mcd-agent
+kubectl logs -n mcd-agent -l app=mcd-agent --tail=30
+```
+
+### Reachability test
+
+Run the reachability test to confirm the agent can communicate with the Monte Carlo platform:
+
+```bash
+kubectl exec -n mcd-agent deploy/mcd-agent-deployment -- \
+  curl -s -X POST localhost:8080/api/v1/test/reachability
+```
+
+### Rotating the agent token
+
+1. Update the secret in AWS Secrets Manager:
    ```bash
    aws secretsmanager update-secret --secret-id mcd/agent/token \
-     --secret-string '{"mcd_id":"YOUR_MCD_ID","mcd_token":"YOUR_MCD_TOKEN"}'
+     --secret-string '{"mcd_id":"NEW_MCD_ID","mcd_token":"NEW_MCD_TOKEN"}'
    ```
 
-2. Configure kubectl access:
+2. Force sync the Kubernetes secret from ESO:
    ```bash
-   aws eks update-kubeconfig --name <cluster_name> --region <region>
+   kubectl annotate externalsecret -n mcd-agent --all \
+     force-sync=$(date +%s) --overwrite
+   ```
+
+3. Restart the agent services:
+   ```bash
+   kubectl rollout restart deployment mcd-agent-deployment -n mcd-agent
+   kubectl rollout restart daemonset logs-collector metrics-collector -n mcd-agent
    ```
 
 ## Outputs

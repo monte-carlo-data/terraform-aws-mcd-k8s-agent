@@ -72,13 +72,18 @@ variable "token_secret" {
 }
 
 variable "token_credentials" {
-  description = "MCD agent token credentials. Set to populate the secret at deploy time, or leave empty to set manually later."
+  description = "MCD agent token credentials. Required when token_secret.create is true."
   type = object({
     mcd_id    = optional(string, null)
     mcd_token = optional(string, null)
   })
   sensitive = true
   default   = {}
+
+  validation {
+    condition     = !var.token_secret.create || (var.token_credentials.mcd_id != null && var.token_credentials.mcd_token != null)
+    error_message = "Both mcd_id and mcd_token are required in token_credentials when token_secret.create is true."
+  }
 }
 
 variable "integration_secrets" {
