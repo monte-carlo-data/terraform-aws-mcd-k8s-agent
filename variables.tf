@@ -112,11 +112,11 @@ variable "helm" {
     install_external_secrets_operator = optional(bool, true)
     chart_repository                  = optional(string, "oci://registry-1.docker.io/montecarlodata")
     chart_name                        = optional(string, "generic-agent-helm")
-    chart_version                     = optional(string, "0.1.0")
+    # Find the latest version at https://hub.docker.com/r/montecarlodata/generic-agent-helm/tags
+    chart_version = string
     enabled_logs_collector            = optional(bool, true)
     enabled_metrics_collector         = optional(bool, true)
   })
-  default = {}
 }
 
 variable "custom_values" {

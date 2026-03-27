@@ -13,6 +13,8 @@ This module deploys the [Monte Carlo](https://www.montecarlodata.com/) container
 
 > **Finding your `backend_service_url`:** Navigate to the [Account Information](https://getmontecarlo.com/account-info#agent-service) page in Monte Carlo. Under the **Agent Service** section, copy the **Public endpoint** (or **Private link endpoint** if using private link). Use this value for the `backend_service_url` variable in the examples below.
 
+> **Finding the latest `chart_version`:** Check the available versions on [Docker Hub](https://hub.docker.com/r/montecarlodata/generic-agent-helm/tags).
+
 For more complete configurations, see the [`examples`](./examples/) directory.
 
 ### Full deployment (new cluster)
@@ -23,6 +25,10 @@ module "mcd_agent" {
 
   region              = "us-east-1"
   backend_service_url = "<backend_service_url>"
+
+  helm = {
+    chart_version = "0.0.2"
+  }
 }
 ```
 
@@ -34,6 +40,10 @@ module "mcd_agent" {
 
   region              = "us-east-1"
   backend_service_url = "<backend_service_url>"
+
+  helm = {
+    chart_version = "0.0.2"
+  }
 
   networking = {
     create_vpc                  = false
@@ -51,6 +61,10 @@ module "mcd_agent" {
 
   region              = "us-east-1"
   backend_service_url = "<backend_service_url>"
+
+  helm = {
+    chart_version = "0.0.2"
+  }
 
   cluster = {
     create                = false
@@ -73,7 +87,8 @@ module "mcd_agent" {
   backend_service_url = "<backend_service_url>"
 
   helm = {
-    deploy_agent = false
+    chart_version = "0.0.2"
+    deploy_agent  = false
   }
 }
 
