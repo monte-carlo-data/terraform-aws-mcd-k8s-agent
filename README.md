@@ -30,7 +30,7 @@ token_credentials = {
 }
 ```
 
-**Option 2 — Use a pre-existing secret:** Point the module to an existing secret in AWS Secrets Manager. The secret value must be a JSON object with the following format:
+**Option 2 — Use a pre-existing secret:** Point the module to an existing secret in AWS Secrets Manager by name. The secret must be in the same region as the module deployment. The secret value must be a JSON object with the following format:
 
 ```json
 {
