@@ -139,6 +139,24 @@ Configure kubectl access:
 aws eks update-kubeconfig --name <cluster_name> --region <region>
 ```
 
+### Approve PrivateLink connection (optional)
+
+If you configured `private_link`, the VPC endpoint connection requires approval from Monte Carlo. After deployment, contact Monte Carlo support and share the following output values:
+
+```bash
+terraform output vpce_id
+terraform output vpce_dns_entry
+```
+
+The agent will not be able to communicate with the Monte Carlo backend until the connection is approved. Once approved, restart the agent services:
+
+```bash
+kubectl rollout restart deployment mcd-agent-deployment -n mcd-agent
+kubectl rollout restart daemonset logs-collector metrics-collector -n mcd-agent
+```
+
+Then run the [reachability test](#reachability-test) to confirm connectivity.
+
 ## Troubleshooting
 
 ### Checking agent logs
@@ -181,15 +199,17 @@ kubectl exec -n mcd-agent deploy/mcd-agent-deployment -- \
 
 ## Outputs
 
-| Name | Description |
-|------|-------------|
-| cluster_endpoint | Endpoint for EKS control plane |
-| cluster_name | EKS cluster name |
-| storage_bucket_name | S3 bucket name for agent storage |
-| pod_identity_role_arn | IAM role ARN for pod identity |
-| eso_role_arn | IAM role ARN for External Secrets Operator |
-| mcd_secrets_access_role_arn | IAM role ARN for ESO to access Secrets Manager |
-| helm_values | Helm values for manual deployment (sensitive) |
+| Name                       | Description                                     |
+|----------------------------|-------------------------------------------------|
+| cluster_endpoint           | Endpoint for EKS control plane                  |
+| cluster_name               | EKS cluster name                                |
+| storage_bucket_name        | S3 bucket name for agent storage                |
+| pod_identity_role_arn      | IAM role ARN for pod identity                   |
+| eso_role_arn               | IAM role ARN for External Secrets Operator       |
+| mcd_secrets_access_role_arn | IAM role ARN for ESO to access Secrets Manager  |
+| vpce_id                    | ID of the Monte Carlo PrivateLink VPC endpoint  |
+| vpce_dns_entry             | DNS entries for the PrivateLink VPC endpoint     |
+| helm_values                | Helm values for manual deployment (sensitive)    |
 
 ## Releases and Development
 
