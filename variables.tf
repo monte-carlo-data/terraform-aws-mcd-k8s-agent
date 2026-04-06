@@ -6,7 +6,7 @@ variable "region" {
 }
 
 variable "backend_service_url" {
-  description = "The Monte Carlo backend service URL. Obtain this from Monte Carlo support."
+  description = "The Monte Carlo backend service URL. Obtain this from Monte Carlo -> Account information -> Agent Service -> Public endpoint (or Private link endpoint if using PrivateLink)."
   type        = string
 }
 
@@ -118,9 +118,9 @@ variable "helm" {
     chart_repository                  = optional(string, "oci://registry-1.docker.io/montecarlodata")
     chart_name                        = optional(string, "generic-agent-helm")
     # Find the latest version at https://hub.docker.com/r/montecarlodata/generic-agent-helm/tags
-    chart_version = string
-    enabled_logs_collector            = optional(bool, true)
-    enabled_metrics_collector         = optional(bool, true)
+    chart_version             = string
+    enabled_logs_collector    = optional(bool, true)
+    enabled_metrics_collector = optional(bool, true)
   })
 }
 
@@ -128,6 +128,15 @@ variable "custom_values" {
   description = "Custom Helm values to merge with module-generated values. Accepts any map matching the chart's values.yaml schema."
   type        = any
   default     = {}
+}
+
+variable "private_link" {
+  description = "AWS PrivateLink configuration for connecting to the Monte Carlo backend via a VPC endpoint. When set, creates an interface VPC endpoint, security group, and Route53 private hosted zone. The region and VPCE service name can be obtained from Monte Carlo -> Account information -> Agent Service -> AWS PrivateLink."
+  type = object({
+    vpce_service_name = string
+    region            = string
+  })
+  default = null
 }
 
 variable "custom_default_tags" {

@@ -53,6 +53,16 @@ output "namespace" {
   value       = local.namespace
 }
 
+output "vpce_id" {
+  description = "ID of the Monte Carlo PrivateLink VPC endpoint."
+  value       = var.private_link != null ? aws_vpc_endpoint.monte_carlo[0].id : null
+}
+
+output "vpce_dns_entry" {
+  description = "DNS entries for the Monte Carlo PrivateLink VPC endpoint."
+  value       = var.private_link != null ? aws_vpc_endpoint.monte_carlo[0].dns_entry : null
+}
+
 output "helm_values" {
   description = "Helm values used for agent deployment. Use these for manual Helm deployment when deploy_agent is false."
   value       = local.helm_values_yaml

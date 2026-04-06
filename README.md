@@ -8,6 +8,7 @@ This module deploys the [Monte Carlo](https://www.montecarlodata.com/) container
 - [AWS CLI](https://aws.amazon.com/cli/) with [authentication](https://registry.terraform.io/providers/hashicorp/aws/latest/docs#authentication-and-configuration)
 - [kubectl](https://kubernetes.io/docs/tasks/tools/) for cluster access
 - A Monte Carlo account with agent credentials (mcd_id and mcd_token)
+- **(PrivateLink only)** Before deploying with `private_link` enabled, contact Monte Carlo support to request that your AWS account be allowed for PrivateLink. You must wait for Monte Carlo to confirm the account has been allowed before proceeding with deployment.
 
 ## Usage
 
@@ -132,12 +133,59 @@ output "helm_values" {
 }
 ```
 
+### AWS PrivateLink (optional)
+
+To route traffic to the Monte Carlo backend over AWS PrivateLink instead of the public internet, add the `private_link` block. The region and VPCE service name can be obtained from Monte Carlo -> Account information -> Agent Service -> AWS PrivateLink. When using PrivateLink, `backend_service_url` must use the private link endpoint (it must contain `.privatelink.`).
+
+```hcl
+module "mcd_agent" {
+  source = "monte-carlo-data/mcd-agent-k8s/aws"
+
+  region              = "us-east-1"
+  backend_service_url = "https://artemis.privatelink.getmontecarlo.com"
+
+  token_credentials = {
+    mcd_id    = var.mcd_id
+    mcd_token = var.mcd_token
+  }
+
+  helm = {
+    chart_version = "0.0.2"
+  }
+
+  private_link = {
+    vpce_service_name = "<vpce_service_name>"
+    region            = "us-east-1"
+  }
+}
+```
+
+This creates an interface VPC endpoint, a security group allowing HTTPS from the VPC CIDR, and a Route53 private hosted zone with an alias record pointing to the endpoint. See [Prerequisites](#prerequisites) for the required allowlisting step and [Approve PrivateLink connection](#approve-privatelink-connection-optional) for post-deployment steps.
+
 ## After Deployment
 
 Configure kubectl access:
 ```bash
 aws eks update-kubeconfig --name <cluster_name> --region <region>
 ```
+
+### Approve PrivateLink connection (optional)
+
+If you configured `private_link`, the VPC endpoint connection requires approval from Monte Carlo. After deployment, contact Monte Carlo support and share the following output values:
+
+```bash
+terraform output vpce_id
+terraform output vpce_dns_entry
+```
+
+The agent will not be able to communicate with the Monte Carlo backend until the connection is approved. Once approved, restart the agent services:
+
+```bash
+kubectl rollout restart deployment mcd-agent-deployment -n mcd-agent
+kubectl rollout restart daemonset logs-collector metrics-collector -n mcd-agent
+```
+
+Then run the [reachability test](#reachability-test) to confirm connectivity.
 
 ## Troubleshooting
 
@@ -181,15 +229,17 @@ kubectl exec -n mcd-agent deploy/mcd-agent-deployment -- \
 
 ## Outputs
 
-| Name | Description |
-|------|-------------|
-| cluster_endpoint | Endpoint for EKS control plane |
-| cluster_name | EKS cluster name |
-| storage_bucket_name | S3 bucket name for agent storage |
-| pod_identity_role_arn | IAM role ARN for pod identity |
-| eso_role_arn | IAM role ARN for External Secrets Operator |
-| mcd_secrets_access_role_arn | IAM role ARN for ESO to access Secrets Manager |
-| helm_values | Helm values for manual deployment (sensitive) |
+| Name                       | Description                                     |
+|----------------------------|-------------------------------------------------|
+| cluster_endpoint           | Endpoint for EKS control plane                  |
+| cluster_name               | EKS cluster name                                |
+| storage_bucket_name        | S3 bucket name for agent storage                |
+| pod_identity_role_arn      | IAM role ARN for pod identity                   |
+| eso_role_arn               | IAM role ARN for External Secrets Operator       |
+| mcd_secrets_access_role_arn | IAM role ARN for ESO to access Secrets Manager  |
+| vpce_id                    | ID of the Monte Carlo PrivateLink VPC endpoint  |
+| vpce_dns_entry             | DNS entries for the PrivateLink VPC endpoint     |
+| helm_values                | Helm values for manual deployment (sensitive)    |
 
 ## Releases and Development
 
