@@ -100,9 +100,9 @@ variable "integration_secrets" {
 variable "agent" {
   description = "Agent container configuration."
   type = object({
-    namespace         = optional(string, "mcd-agent")
-    image             = optional(string, "montecarlodata/agent:latest-generic")
-    replica_count     = optional(number, 1)
+    namespace     = optional(string, "mcd-agent")
+    image         = optional(string, "montecarlodata/agent:latest-generic")
+    replica_count = optional(number, 1)
   })
   default = {}
 }
