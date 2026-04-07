@@ -103,7 +103,6 @@ variable "agent" {
     namespace         = optional(string, "mcd-agent")
     image             = optional(string, "montecarlodata/agent:latest-generic")
     replica_count     = optional(number, 1)
-    remote_upgradable = optional(bool, true)
   })
   default = {}
 }
