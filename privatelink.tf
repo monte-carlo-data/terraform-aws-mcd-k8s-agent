@@ -3,7 +3,7 @@
 # -----------------------------------------------------------------------------
 
 locals {
-  # Extract hostname from backend_service_url (e.g. "https://host.example.com/graphql" -> "host.example.com")
+  # Extract hostname from backend_service_url (e.g. "https://artemis.privatelink.getmontecarlo.com" -> "artemis.privatelink.getmontecarlo.com")
   private_link_hostname = var.private_link != null ? regex("https?://([^/:]+)", var.backend_service_url)[0] : null
 }
 
