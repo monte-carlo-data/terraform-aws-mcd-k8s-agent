@@ -3,12 +3,12 @@
 # -----------------------------------------------------------------------------
 
 locals {
-  # Extract hostname from backend_service_url (e.g. "https://host.example.com/graphql" -> "host.example.com")
+  # Extract hostname from backend_service_url (e.g. "https://artemis.privatelink.getmontecarlo.com" -> "artemis.privatelink.getmontecarlo.com")
   private_link_hostname = var.private_link != null ? regex("https?://([^/:]+)", var.backend_service_url)[0] : null
 }
 
 data "aws_vpc" "selected" {
-  count = var.private_link != null ? 1 : 0
+  count = (var.private_link != null || var.networking.create_vpc_endpoints) ? 1 : 0
   id    = local.effective_vpc_id
 }
 

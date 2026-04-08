@@ -13,6 +13,8 @@ module "mcd_on_prem_agent" {
     create_vpc                  = false
     existing_vpc_id             = "vpc-0123456789abcdef0"
     existing_private_subnet_ids = ["subnet-aaa111", "subnet-bbb222"]
+    # Set to false if your VPC already has these service endpoints
+    # create_vpc_endpoints = false
   }
 }
 

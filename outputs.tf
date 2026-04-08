@@ -63,6 +63,16 @@ output "vpce_dns_entry" {
   value       = var.private_link != null ? aws_vpc_endpoint.monte_carlo[0].dns_entry : null
 }
 
+output "vpc_endpoint_ids" {
+  description = "IDs of the AWS service VPC endpoints (S3, Secrets Manager, STS, EC2)."
+  value = var.networking.create_vpc_endpoints ? {
+    s3             = aws_vpc_endpoint.s3[0].id
+    secretsmanager = aws_vpc_endpoint.secretsmanager[0].id
+    sts            = aws_vpc_endpoint.sts[0].id
+    ec2            = aws_vpc_endpoint.ec2[0].id
+  } : null
+}
+
 output "helm_values" {
   description = "Helm values used for agent deployment. Use these for manual Helm deployment when deploy_agent is false."
   value       = local.helm_values_yaml
