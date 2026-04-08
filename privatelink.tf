@@ -8,7 +8,7 @@ locals {
 }
 
 data "aws_vpc" "selected" {
-  count = var.private_link != null ? 1 : 0
+  count = (var.private_link != null || var.networking.create_vpc_endpoints) ? 1 : 0
   id    = local.effective_vpc_id
 }
 

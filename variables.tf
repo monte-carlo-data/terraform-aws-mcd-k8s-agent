@@ -33,6 +33,7 @@ variable "networking" {
   description = "VPC and networking configuration."
   type = object({
     create_vpc                  = optional(bool, true)
+    create_vpc_endpoints        = optional(bool, true)
     vpc_cidr                    = optional(string, "10.18.0.0/16")
     availability_zones          = optional(list(string), [])
     private_subnet_cidrs        = optional(list(string), ["10.18.1.0/24", "10.18.2.0/24", "10.18.3.0/24"])
