@@ -1,6 +1,4 @@
 locals {
-  mcd_wrapper_version       = "0.1.0"
-  mcd_agent_platform        = "AWS"
   mcd_agent_service_name    = "REMOTE_AGENT"
   mcd_agent_deployment_type = "TERRAFORM"
 
