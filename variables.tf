@@ -103,6 +103,7 @@ variable "agent" {
   type = object({
     namespace     = optional(string, "mcd-agent")
     image         = optional(string, "montecarlodata/agent:latest-generic")
+    pull_policy   = optional(string, "Always")
     replica_count = optional(number, 1)
   })
   default = {}

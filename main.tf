@@ -411,7 +411,7 @@ locals {
 
     image = {
       repository = split(":", var.agent.image)[0]
-      pullPolicy = "IfNotPresent"
+      pullPolicy = var.agent.pull_policy
       tag        = length(split(":", var.agent.image)) > 1 ? split(":", var.agent.image)[1] : "latest-generic"
     }
 
