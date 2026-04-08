@@ -84,9 +84,13 @@ module "mcd_agent" {
     create_vpc                  = false
     existing_vpc_id             = "vpc-0123456789abcdef0"
     existing_private_subnet_ids = ["subnet-aaa111", "subnet-bbb222"]
+    # Set to false if your VPC already has these service endpoints
+    # create_vpc_endpoints = false
   }
 }
 ```
+
+> **Note:** The existing VPC must have DNS hostnames enabled (`enable_dns_hostnames = true`) for VPC Interface endpoints. If your VPC already has VPC endpoints for S3, Secrets Manager, STS, and EC2, set `create_vpc_endpoints = false` to avoid conflicts.
 
 ### Existing cluster
 
@@ -229,17 +233,18 @@ kubectl exec -n mcd-agent deploy/mcd-agent-deployment -- \
 
 ## Outputs
 
-| Name                       | Description                                     |
-|----------------------------|-------------------------------------------------|
-| cluster_endpoint           | Endpoint for EKS control plane                  |
-| cluster_name               | EKS cluster name                                |
-| storage_bucket_name        | S3 bucket name for agent storage                |
-| pod_identity_role_arn      | IAM role ARN for pod identity                   |
-| eso_role_arn               | IAM role ARN for External Secrets Operator       |
-| mcd_secrets_access_role_arn | IAM role ARN for ESO to access Secrets Manager  |
-| vpce_id                    | ID of the Monte Carlo PrivateLink VPC endpoint  |
-| vpce_dns_entry             | DNS entries for the PrivateLink VPC endpoint     |
-| helm_values                | Helm values for manual deployment (sensitive)    |
+| Name                       | Description                                          |
+|----------------------------|------------------------------------------------------|
+| cluster_endpoint           | Endpoint for EKS control plane                       |
+| cluster_name               | EKS cluster name                                     |
+| storage_bucket_name        | S3 bucket name for agent storage                     |
+| pod_identity_role_arn      | IAM role ARN for pod identity                        |
+| eso_role_arn               | IAM role ARN for External Secrets Operator            |
+| mcd_secrets_access_role_arn | IAM role ARN for ESO to access Secrets Manager       |
+| vpce_id                    | ID of the Monte Carlo PrivateLink VPC endpoint       |
+| vpce_dns_entry             | DNS entries for the PrivateLink VPC endpoint          |
+| vpc_endpoint_ids           | IDs of AWS service VPC endpoints (S3, SM, STS, EC2)  |
+| helm_values                | Helm values for manual deployment (sensitive)         |
 
 ## Releases and Development
 
