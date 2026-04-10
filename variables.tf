@@ -141,7 +141,7 @@ variable "private_link" {
 }
 
 variable "custom_default_tags" {
-  description = "Custom tags to apply to all resources. Merged with default Monte Carlo agent tags."
+  description = "Custom tags to apply to all resources. Merged with default Monte Carlo agent tags (mcd-agent-service-name, mcd-agent-deployment-type)."
   type        = map(string)
   default     = {}
 }

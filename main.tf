@@ -2,6 +2,11 @@ locals {
   mcd_agent_service_name    = "REMOTE_AGENT"
   mcd_agent_deployment_type = "TERRAFORM"
 
+  default_tags = merge(var.custom_default_tags, {
+    "mcd-agent-service-name"    = lower(local.mcd_agent_service_name)
+    "mcd-agent-deployment-type" = lower(local.mcd_agent_deployment_type)
+  })
+
   cluster_name           = var.cluster.name != null ? var.cluster.name : "mcd-agent-${random_id.mcd_agent_id.hex}"
   effective_cluster_name = var.cluster.create ? module.eks[0].cluster_name : var.cluster.existing_cluster_name
   namespace              = var.agent.namespace
@@ -56,6 +61,7 @@ module "vpc" {
   name = "${local.cluster_name}-vpc"
   cidr = var.networking.vpc_cidr
   azs  = local.effective_azs
+  tags = local.default_tags
 
   private_subnets = var.networking.private_subnet_cidrs
   public_subnets  = var.networking.public_subnet_cidrs
@@ -84,6 +90,7 @@ module "eks" {
 
   name               = local.cluster_name
   kubernetes_version = var.cluster.kubernetes_version
+  tags               = local.default_tags
 
   endpoint_public_access                   = true
   enable_cluster_creator_admin_permissions = true
@@ -107,6 +114,7 @@ module "eks" {
 resource "aws_s3_bucket" "mcd_agent_store" {
   count  = var.storage.create_bucket ? 1 : 0
   bucket = local.mcd_agent_store_name
+  tags   = local.default_tags
 }
 
 resource "aws_s3_bucket_lifecycle_configuration" "mcd_agent_store_lifecycle" {
@@ -218,6 +226,7 @@ data "aws_iam_policy_document" "assume_role" {
 resource "aws_iam_role" "pod_identity" {
   name               = "${local.effective_cluster_name}-pod-identity"
   assume_role_policy = data.aws_iam_policy_document.assume_role.json
+  tags               = local.default_tags
 }
 
 resource "aws_eks_pod_identity_association" "agent_association" {
@@ -225,6 +234,7 @@ resource "aws_eks_pod_identity_association" "agent_association" {
   namespace       = local.namespace
   service_account = local.service_account_name
   role_arn        = aws_iam_role.pod_identity.arn
+  tags            = local.default_tags
 }
 
 resource "aws_iam_role_policy" "mcd_agent_service_s3_policy" {
@@ -263,6 +273,7 @@ resource "aws_iam_role_policy" "mcd_agent_service_s3_policy" {
 resource "aws_iam_role" "eso_role" {
   name               = "${local.effective_cluster_name}-eso-role"
   assume_role_policy = data.aws_iam_policy_document.assume_role.json
+  tags               = local.default_tags
 }
 
 resource "aws_eks_pod_identity_association" "eso_association" {
@@ -270,6 +281,7 @@ resource "aws_eks_pod_identity_association" "eso_association" {
   namespace       = "external-secrets"
   service_account = "external-secrets"
   role_arn        = aws_iam_role.eso_role.arn
+  tags            = local.default_tags
 }
 
 data "aws_iam_policy_document" "eso_assume_role" {
@@ -291,6 +303,7 @@ data "aws_iam_policy_document" "eso_assume_role" {
 resource "aws_iam_role" "mcd_secrets_access_role" {
   name               = "${local.effective_cluster_name}-mcd-agent-secrets-access"
   assume_role_policy = data.aws_iam_policy_document.eso_assume_role.json
+  tags               = local.default_tags
 }
 
 resource "aws_iam_role_policy" "mcd_agent_token_secret_access" {
@@ -337,6 +350,7 @@ resource "aws_secretsmanager_secret" "mcd_agent_token" {
   count                          = var.token_secret.create ? 1 : 0
   name                           = var.token_secret.name
   force_overwrite_replica_secret = true
+  tags                           = local.default_tags
 }
 
 resource "aws_secretsmanager_secret_version" "mcd_agent_token_version" {

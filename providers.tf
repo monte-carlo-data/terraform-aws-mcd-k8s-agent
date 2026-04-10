@@ -1,13 +1,10 @@
-provider "aws" {
-  region = var.region
-
-  default_tags {
-    tags = merge(var.custom_default_tags, {
-      "mcd-agent-service-name"    = lower(local.mcd_agent_service_name)
-      "mcd-agent-deployment-type" = lower(local.mcd_agent_deployment_type)
-    })
-  }
-}
+# NOTE: The aws provider is intentionally NOT configured here. Reusable modules
+# should not include provider configuration blocks — the calling root module must
+# configure the aws provider. See README for required provider settings.
+#
+# The helm and kubernetes providers are configured here because they depend on the
+# cluster's kubeconfig, which is only available after the cluster is created/read.
+# This is a known compromise for Kubernetes-deploying modules.
 
 provider "helm" {
   kubernetes = {
