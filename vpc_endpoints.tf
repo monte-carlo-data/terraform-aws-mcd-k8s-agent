@@ -43,9 +43,9 @@ resource "aws_security_group" "vpc_endpoints" {
     cidr_blocks = [data.aws_vpc.selected[0].cidr_block]
   }
 
-  tags = {
+  tags = merge(local.default_tags, {
     Name = "${local.effective_cluster_name}-vpc-endpoints-sg"
-  }
+  })
 }
 
 # --- S3 Gateway Endpoint ---
@@ -57,9 +57,9 @@ resource "aws_vpc_endpoint" "s3" {
   vpc_endpoint_type = "Gateway"
   route_table_ids   = local.effective_private_route_table_ids
 
-  tags = {
+  tags = merge(local.default_tags, {
     Name = "${local.effective_cluster_name}-s3-endpoint"
-  }
+  })
 }
 
 # --- Secrets Manager Interface Endpoint ---
@@ -75,9 +75,9 @@ resource "aws_vpc_endpoint" "secretsmanager" {
 
   private_dns_enabled = true
 
-  tags = {
+  tags = merge(local.default_tags, {
     Name = "${local.effective_cluster_name}-secretsmanager-endpoint"
-  }
+  })
 
   lifecycle {
     precondition {
@@ -100,9 +100,9 @@ resource "aws_vpc_endpoint" "sts" {
 
   private_dns_enabled = true
 
-  tags = {
+  tags = merge(local.default_tags, {
     Name = "${local.effective_cluster_name}-sts-endpoint"
-  }
+  })
 }
 
 # --- EC2 Interface Endpoint ---
@@ -118,7 +118,7 @@ resource "aws_vpc_endpoint" "ec2" {
 
   private_dns_enabled = true
 
-  tags = {
+  tags = merge(local.default_tags, {
     Name = "${local.effective_cluster_name}-ec2-endpoint"
-  }
+  })
 }

@@ -26,6 +26,9 @@ resource "aws_security_group" "monte_carlo_vpce" {
     cidr_blocks = [data.aws_vpc.selected[0].cidr_block]
   }
 
+  tags = merge(local.default_tags, {
+    Name = "${local.effective_cluster_name}-monte-carlo-vpce-sg"
+  })
 }
 
 resource "aws_vpc_endpoint" "monte_carlo" {
@@ -40,6 +43,8 @@ resource "aws_vpc_endpoint" "monte_carlo" {
 
   # Private DNS is not supported for cross-region endpoints
   private_dns_enabled = false
+
+  tags = local.default_tags
 
   lifecycle {
     precondition {
@@ -56,6 +61,8 @@ resource "aws_route53_zone" "monte_carlo_privatelink" {
   vpc {
     vpc_id = local.effective_vpc_id
   }
+
+  tags = local.default_tags
 }
 
 resource "aws_route53_record" "monte_carlo_privatelink" {

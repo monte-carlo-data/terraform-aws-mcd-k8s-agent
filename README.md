@@ -10,6 +10,20 @@ This module deploys the [Monte Carlo](https://www.montecarlodata.com/) container
 - A Monte Carlo account with agent credentials (mcd_id and mcd_token)
 - **(PrivateLink only)** Before deploying with `private_link` enabled, contact Monte Carlo support to request that your AWS account be allowed for PrivateLink. You must wait for Monte Carlo to confirm the account has been allowed before proceeding with deployment.
 
+## Provider Configuration
+
+This module does **not** configure the `aws` provider — the calling root module must do so. At minimum, the provider must set the target region:
+
+```hcl
+provider "aws" {
+  region = "us-east-1"
+}
+```
+
+The module applies Monte Carlo agent tags (`mcd-agent-service-name`, `mcd-agent-deployment-type`) to all resources it creates. To add your own tags alongside these, use the `custom_default_tags` variable — there is no need to set `default_tags` on the provider for this module's resources.
+
+The `helm` and `kubernetes` providers are configured inside this module because they depend on the cluster's kubeconfig, which is only available after the cluster is created or read. This is a [known compromise](https://developer.hashicorp.com/terraform/language/modules/develop/providers) for modules that deploy Kubernetes resources.
+
 ## Usage
 
 > **Finding your `backend_service_url`:** Navigate to the [Account Information](https://getmontecarlo.com/account-info#agent-service) page in Monte Carlo. Under the **Agent Service** section, copy the **Public endpoint** (or **Private link endpoint** if using private link). Use this value for the `backend_service_url` variable in the examples below.
@@ -47,9 +61,15 @@ token_secret = {
 }
 ```
 
+All examples below require the `aws` provider configured as described in [Provider Configuration](#provider-configuration).
+
 ### Full deployment (new cluster)
 
 ```hcl
+provider "aws" {
+  region = "us-east-1"
+}
+
 module "mcd_agent" {
   source = "monte-carlo-data/mcd-agent-k8s/aws"
 
@@ -70,6 +90,10 @@ module "mcd_agent" {
 ### Existing VPC
 
 ```hcl
+provider "aws" {
+  region = "us-east-1"
+}
+
 module "mcd_agent" {
   source = "monte-carlo-data/mcd-agent-k8s/aws"
 
@@ -95,6 +119,10 @@ module "mcd_agent" {
 ### Existing cluster
 
 ```hcl
+provider "aws" {
+  region = "us-east-1"
+}
+
 module "mcd_agent" {
   source = "monte-carlo-data/mcd-agent-k8s/aws"
 
@@ -119,6 +147,10 @@ module "mcd_agent" {
 ### Infrastructure only (manual Helm deployment)
 
 ```hcl
+provider "aws" {
+  region = "us-east-1"
+}
+
 module "mcd_agent" {
   source = "monte-carlo-data/mcd-agent-k8s/aws"
 
@@ -142,6 +174,10 @@ output "helm_values" {
 To route traffic to the Monte Carlo backend over AWS PrivateLink instead of the public internet, add the `private_link` block. The region and VPCE service name can be obtained from Monte Carlo -> Account information -> Agent Service -> AWS PrivateLink. When using PrivateLink, `backend_service_url` must use the private link endpoint (it must contain `.privatelink.`).
 
 ```hcl
+provider "aws" {
+  region = "us-east-1"
+}
+
 module "mcd_agent" {
   source = "monte-carlo-data/mcd-agent-k8s/aws"
 
