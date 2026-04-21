@@ -53,7 +53,7 @@ resource "aws_security_group" "vpc_endpoints" {
 resource "aws_vpc_endpoint" "s3" {
   count             = local.create_vpc_endpoints ? 1 : 0
   vpc_id            = local.effective_vpc_id
-  service_name      = "com.amazonaws.${var.region}.s3"
+  service_name      = "com.amazonaws.${local.region}.s3"
   vpc_endpoint_type = "Gateway"
   route_table_ids   = local.effective_private_route_table_ids
 
@@ -67,7 +67,7 @@ resource "aws_vpc_endpoint" "s3" {
 resource "aws_vpc_endpoint" "secretsmanager" {
   count             = local.create_vpc_endpoints ? 1 : 0
   vpc_id            = local.effective_vpc_id
-  service_name      = "com.amazonaws.${var.region}.secretsmanager"
+  service_name      = "com.amazonaws.${local.region}.secretsmanager"
   vpc_endpoint_type = "Interface"
 
   subnet_ids         = local.effective_private_subnet_ids
@@ -92,7 +92,7 @@ resource "aws_vpc_endpoint" "secretsmanager" {
 resource "aws_vpc_endpoint" "sts" {
   count             = local.create_vpc_endpoints ? 1 : 0
   vpc_id            = local.effective_vpc_id
-  service_name      = "com.amazonaws.${var.region}.sts"
+  service_name      = "com.amazonaws.${local.region}.sts"
   vpc_endpoint_type = "Interface"
 
   subnet_ids         = local.effective_private_subnet_ids
@@ -110,7 +110,7 @@ resource "aws_vpc_endpoint" "sts" {
 resource "aws_vpc_endpoint" "ec2" {
   count             = local.create_vpc_endpoints ? 1 : 0
   vpc_id            = local.effective_vpc_id
-  service_name      = "com.amazonaws.${var.region}.ec2"
+  service_name      = "com.amazonaws.${local.region}.ec2"
   vpc_endpoint_type = "Interface"
 
   subnet_ids         = local.effective_private_subnet_ids

@@ -15,7 +15,7 @@ output "cluster_security_group_id" {
 
 output "region" {
   description = "AWS region."
-  value       = var.region
+  value       = local.region
 }
 
 output "storage_bucket_name" {

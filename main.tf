@@ -2,6 +2,8 @@ locals {
   mcd_agent_service_name    = "REMOTE_AGENT"
   mcd_agent_deployment_type = "TERRAFORM"
 
+  region = data.aws_region.current.region
+
   default_tags = merge(var.custom_default_tags, {
     "mcd-agent-service-name"    = lower(local.mcd_agent_service_name)
     "mcd-agent-deployment-type" = lower(local.mcd_agent_deployment_type)
@@ -31,6 +33,7 @@ locals {
 data "aws_caller_identity" "current" {}
 data "aws_partition" "current" {}
 data "aws_availability_zones" "available" {}
+data "aws_region" "current" {}
 
 data "aws_eks_cluster" "existing" {
   count = var.cluster.create ? 0 : 1
@@ -322,10 +325,10 @@ resource "aws_iam_role_policy" "mcd_agent_token_secret_access" {
           var.token_secret.create ? [
             aws_secretsmanager_secret.mcd_agent_token[0].arn
             ] : [
-            "arn:${data.aws_partition.current.partition}:secretsmanager:${var.region}:${data.aws_caller_identity.current.account_id}:secret:${var.token_secret.name}*"
+            "arn:${data.aws_partition.current.partition}:secretsmanager:${local.region}:${data.aws_caller_identity.current.account_id}:secret:${var.token_secret.name}*"
           ],
           [for s in var.integration_secrets :
-            "arn:${data.aws_partition.current.partition}:secretsmanager:${var.region}:${data.aws_caller_identity.current.account_id}:secret:${s.remote_ref_key}*"
+            "arn:${data.aws_partition.current.partition}:secretsmanager:${local.region}:${data.aws_caller_identity.current.account_id}:secret:${s.remote_ref_key}*"
           ]
         ),
         "Effect" : "Allow"
@@ -439,7 +442,7 @@ locals {
       provider = {
         aws = {
           role    = aws_iam_role.mcd_secrets_access_role.arn
-          region  = var.region
+          region  = local.region
           service = "SecretsManager"
         }
       }
