@@ -6,7 +6,7 @@ The `aws` provider must be configured with the target region — see the `provid
 
 ## Prerequisites
 
-- [Terraform](https://www.terraform.io/downloads.html) >= 1.3
+- [Terraform](https://www.terraform.io/downloads.html) >= 1.9
 - An existing EKS cluster with kubectl access
 - [AWS CLI](https://aws.amazon.com/cli/) configured with appropriate credentials
 
