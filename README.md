@@ -73,7 +73,6 @@ provider "aws" {
 module "mcd_agent" {
   source = "monte-carlo-data/mcd-agent-k8s/aws"
 
-  region              = "us-east-1"
   backend_service_url = "<backend_service_url>"
 
   token_credentials = {
@@ -97,7 +96,6 @@ provider "aws" {
 module "mcd_agent" {
   source = "monte-carlo-data/mcd-agent-k8s/aws"
 
-  region              = "us-east-1"
   backend_service_url = "<backend_service_url>"
 
   helm = {
@@ -126,7 +124,6 @@ provider "aws" {
 module "mcd_agent" {
   source = "monte-carlo-data/mcd-agent-k8s/aws"
 
-  region              = "us-east-1"
   backend_service_url = "<backend_service_url>"
 
   helm = {
@@ -154,7 +151,6 @@ provider "aws" {
 module "mcd_agent" {
   source = "monte-carlo-data/mcd-agent-k8s/aws"
 
-  region              = "us-east-1"
   backend_service_url = "<backend_service_url>"
 
   helm = {
@@ -181,7 +177,6 @@ provider "aws" {
 module "mcd_agent" {
   source = "monte-carlo-data/mcd-agent-k8s/aws"
 
-  region              = "us-east-1"
   backend_service_url = "https://artemis.privatelink.getmontecarlo.com"
 
   token_credentials = {

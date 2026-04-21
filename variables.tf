@@ -1,9 +1,4 @@
-# --- AWS Configuration ---
-
-variable "region" {
-  description = "The AWS region to deploy resources into."
-  type        = string
-}
+# --- Monte Carlo Configuration ---
 
 variable "backend_service_url" {
   description = "The Monte Carlo backend service URL. Obtain this from Monte Carlo -> Account information -> Agent Service -> Public endpoint (or Private link endpoint if using PrivateLink)."

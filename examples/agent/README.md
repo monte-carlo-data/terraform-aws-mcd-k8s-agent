@@ -2,9 +2,11 @@
 
 This example deploys the Monte Carlo on-prem agent on a new EKS cluster with all infrastructure provisioned automatically.
 
+The `aws` provider must be configured with the target region — see the `provider "aws"` block in `main.tf` and the module's [Provider Configuration](../../README.md#provider-configuration) section.
+
 ## Prerequisites
 
-- [Terraform](https://www.terraform.io/downloads.html) >= 1.3
+- [Terraform](https://www.terraform.io/downloads.html) >= 1.9
 - [AWS CLI](https://aws.amazon.com/cli/) configured with appropriate credentials
 - [kubectl](https://kubernetes.io/docs/tasks/tools/)
 

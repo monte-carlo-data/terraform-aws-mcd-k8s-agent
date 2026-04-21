@@ -1,7 +1,10 @@
+provider "aws" {
+  region = "us-east-1"
+}
+
 module "mcd_on_prem_agent" {
   source = "../../"
 
-  region              = "us-east-1"
   backend_service_url = "<backend_service_url>"
 
   helm = {
