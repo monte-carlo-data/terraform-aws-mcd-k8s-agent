@@ -463,17 +463,14 @@ locals {
       }]
     }
 
-    logsCollector    = { enabled = var.helm.enabled_logs_collector }
+    logShipping      = var.helm.log_shipping
     metricsCollector = { enabled = var.helm.enabled_metrics_collector }
   }
 
-  # Merge custom_values over base, then re-apply collector merges
-  # so the typed boolean toggles always win
+  # Merge custom_values over base, then re-apply typed module fields
+  # so the module-managed values always win
   helm_values = merge(local.base_helm_values, var.custom_values, {
-    logsCollector = merge(
-      try(var.custom_values.logsCollector, {}),
-      { enabled = var.helm.enabled_logs_collector }
-    )
+    logShipping = var.helm.log_shipping
     metricsCollector = merge(
       try(var.custom_values.metricsCollector, {}),
       { enabled = var.helm.enabled_metrics_collector }
