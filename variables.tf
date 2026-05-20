@@ -115,9 +115,14 @@ variable "helm" {
     chart_name                        = optional(string, "generic-agent-helm")
     # Find the latest version at https://hub.docker.com/r/montecarlodata/generic-agent-helm/tags
     chart_version             = string
-    enabled_logs_collector    = optional(bool, true)
+    log_shipping              = optional(string, "in-process")
     enabled_metrics_collector = optional(bool, true)
   })
+
+  validation {
+    condition     = contains(["in-process", "fluentd", "none"], var.helm.log_shipping)
+    error_message = "helm.log_shipping must be one of: in-process, fluentd, none."
+  }
 }
 
 variable "custom_values" {
