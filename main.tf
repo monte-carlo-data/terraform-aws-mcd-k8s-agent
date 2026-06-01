@@ -24,6 +24,10 @@ locals {
 
   cluster_endpoint       = var.cluster.create ? module.eks[0].cluster_endpoint : data.aws_eks_cluster.existing[0].endpoint
   cluster_ca_certificate = base64decode(var.cluster.create ? module.eks[0].cluster_certificate_authority_data : data.aws_eks_cluster.existing[0].certificate_authority[0].data)
+
+  use_oauth           = var.oauth_credentials != null || var.oauth_secret != null
+  create_oauth_secret = var.oauth_credentials != null && (var.oauth_secret == null || var.oauth_secret.create)
+  oauth_secret_name   = var.oauth_secret != null ? var.oauth_secret.name : "mcd/agent/oauth"
 }
 
 # -----------------------------------------------------------------------------
@@ -307,6 +311,17 @@ resource "aws_iam_role" "mcd_secrets_access_role" {
   name               = "${local.effective_cluster_name}-mcd-agent-secrets-access"
   assume_role_policy = data.aws_iam_policy_document.eso_assume_role.json
   tags               = local.default_tags
+
+  lifecycle {
+    precondition {
+      condition     = var.oauth_credentials == null || (var.token_credentials.mcd_id == null && var.token_credentials.mcd_token == null)
+      error_message = "Only one of oauth_credentials or token_credentials should be set, not both."
+    }
+    precondition {
+      condition     = var.oauth_credentials != null || !var.token_secret.create || (var.token_credentials.mcd_id != null && var.token_credentials.mcd_token != null)
+      error_message = "Both mcd_id and mcd_token are required in token_credentials when token_secret.create is true and oauth_credentials is not set."
+    }
+  }
 }
 
 resource "aws_iam_role_policy" "mcd_agent_token_secret_access" {
@@ -322,11 +337,20 @@ resource "aws_iam_role_policy" "mcd_agent_token_secret_access" {
           "secretsmanager:ListSecretVersionIds"
         ],
         "Resource" : concat(
-          var.token_secret.create ? [
-            aws_secretsmanager_secret.mcd_agent_token[0].arn
-            ] : [
-            "arn:${data.aws_partition.current.partition}:secretsmanager:${local.region}:${data.aws_caller_identity.current.account_id}:secret:${var.token_secret.name}*"
-          ],
+          local.use_oauth ? [] : (
+            var.token_secret.create ? [
+              aws_secretsmanager_secret.mcd_agent_token[0].arn
+              ] : [
+              "arn:${data.aws_partition.current.partition}:secretsmanager:${local.region}:${data.aws_caller_identity.current.account_id}:secret:${var.token_secret.name}*"
+            ]
+          ),
+          local.use_oauth ? (
+            local.create_oauth_secret ? [
+              aws_secretsmanager_secret.mcd_agent_oauth[0].arn
+              ] : [
+              "arn:${data.aws_partition.current.partition}:secretsmanager:${local.region}:${data.aws_caller_identity.current.account_id}:secret:${local.oauth_secret_name}*"
+            ]
+          ) : [],
           [for s in var.integration_secrets :
             "arn:${data.aws_partition.current.partition}:secretsmanager:${local.region}:${data.aws_caller_identity.current.account_id}:secret:${s.remote_ref_key}*"
           ]
@@ -350,18 +374,34 @@ resource "aws_iam_role_policy" "mcd_agent_token_secret_access" {
 # -----------------------------------------------------------------------------
 
 resource "aws_secretsmanager_secret" "mcd_agent_token" {
-  count                          = var.token_secret.create ? 1 : 0
+  count                          = !local.use_oauth && var.token_secret.create ? 1 : 0
   name                           = var.token_secret.name
   force_overwrite_replica_secret = true
   tags                           = local.default_tags
 }
 
 resource "aws_secretsmanager_secret_version" "mcd_agent_token_version" {
-  count     = var.token_secret.create ? 1 : 0
+  count     = !local.use_oauth && var.token_secret.create ? 1 : 0
   secret_id = aws_secretsmanager_secret.mcd_agent_token[0].id
   secret_string = jsonencode({
     "mcd_id"    = var.token_credentials.mcd_id != null ? var.token_credentials.mcd_id : ""
     "mcd_token" = var.token_credentials.mcd_token != null ? var.token_credentials.mcd_token : ""
+  })
+}
+
+resource "aws_secretsmanager_secret" "mcd_agent_oauth" {
+  count                          = local.create_oauth_secret ? 1 : 0
+  name                           = local.oauth_secret_name
+  force_overwrite_replica_secret = true
+  tags                           = local.default_tags
+}
+
+resource "aws_secretsmanager_secret_version" "mcd_agent_oauth_version" {
+  count     = local.create_oauth_secret ? 1 : 0
+  secret_id = aws_secretsmanager_secret.mcd_agent_oauth[0].id
+  secret_string = jsonencode({
+    "client_id"     = var.oauth_credentials.client_id
+    "client_secret" = var.oauth_credentials.client_secret
   })
 }
 
@@ -422,50 +462,61 @@ resource "helm_release" "mcd_agent" {
 }
 
 locals {
-  base_helm_values = {
-    namespace    = local.namespace
-    replicaCount = var.agent.replica_count
-
-    image = {
-      repository = split(":", var.agent.image)[0]
-      pullPolicy = var.agent.pull_policy
-      tag        = length(split(":", var.agent.image)) > 1 ? split(":", var.agent.image)[1] : "latest-generic"
-    }
-
-    container = {
-      backendServiceUrl = var.backend_service_url
-      storageBucketName = local.effective_bucket_name
-      storageType       = "S3"
-    }
-
-    secretStore = {
-      provider = {
-        aws = {
-          role    = aws_iam_role.mcd_secrets_access_role.arn
-          region  = local.region
-          service = "SecretsManager"
-        }
+  auth_helm_values = local.use_oauth ? {
+    oauthSecret = {
+      remoteRef = {
+        key = local.oauth_secret_name
       }
     }
-
+    } : {
     tokenSecret = {
       remoteRef = {
         key = var.token_secret.name
       }
     }
-
-    integrationsSecrets = {
-      data = [for s in var.integration_secrets : {
-        secretKey = s.secret_key
-        remoteRef = {
-          key = s.remote_ref_key
-        }
-      }]
-    }
-
-    logShipping      = var.helm.log_shipping
-    metricsCollector = { enabled = var.helm.enabled_metrics_collector }
   }
+
+  base_helm_values = merge(
+    {
+      namespace    = local.namespace
+      replicaCount = var.agent.replica_count
+
+      image = {
+        repository = split(":", var.agent.image)[0]
+        pullPolicy = var.agent.pull_policy
+        tag        = length(split(":", var.agent.image)) > 1 ? split(":", var.agent.image)[1] : "latest-generic"
+      }
+
+      container = {
+        backendServiceUrl = var.backend_service_url
+        storageBucketName = local.effective_bucket_name
+        storageType       = "S3"
+      }
+
+      secretStore = {
+        provider = {
+          aws = {
+            role    = aws_iam_role.mcd_secrets_access_role.arn
+            region  = local.region
+            service = "SecretsManager"
+          }
+        }
+      }
+
+      integrationsSecrets = {
+        data = [for s in var.integration_secrets : {
+          secretKey = s.secret_key
+          remoteRef = {
+            key = s.remote_ref_key
+          }
+        }]
+      }
+
+      logShipping      = var.helm.log_shipping
+      metricsCollector = { enabled = var.helm.enabled_metrics_collector }
+    },
+    local.auth_helm_values
+  )
 
   # Merge custom_values over base, then re-apply typed module fields
   # so the module-managed values always win

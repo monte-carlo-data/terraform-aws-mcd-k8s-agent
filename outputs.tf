@@ -45,7 +45,12 @@ output "mcd_secrets_access_role_arn" {
 
 output "mcd_agent_token_secret_arn" {
   description = "ARN of the Secrets Manager secret for the agent token."
-  value       = var.token_secret.create ? aws_secretsmanager_secret.mcd_agent_token[0].arn : null
+  value       = !local.use_oauth && var.token_secret.create ? aws_secretsmanager_secret.mcd_agent_token[0].arn : null
+}
+
+output "mcd_agent_oauth_secret_arn" {
+  description = "ARN of the Secrets Manager secret for the agent OAuth credentials."
+  value       = local.create_oauth_secret ? aws_secretsmanager_secret.mcd_agent_oauth[0].arn : null
 }
 
 output "namespace" {

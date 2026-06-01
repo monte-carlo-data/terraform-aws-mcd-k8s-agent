@@ -68,18 +68,32 @@ variable "token_secret" {
 }
 
 variable "token_credentials" {
-  description = "MCD agent token credentials. Required when token_secret.create is true."
+  description = "MCD agent token credentials. Required when token_secret.create is true and oauth_credentials is not set."
   type = object({
     mcd_id    = optional(string, null)
     mcd_token = optional(string, null)
   })
   sensitive = true
   default   = {}
+}
 
-  validation {
-    condition     = !var.token_secret.create || (var.token_credentials.mcd_id != null && var.token_credentials.mcd_token != null)
-    error_message = "Both mcd_id and mcd_token are required in token_credentials when token_secret.create is true."
-  }
+variable "oauth_credentials" {
+  description = "OAuth client credentials for agent authentication. If provided, the module creates a secret in AWS Secrets Manager and configures the Helm chart to use OAuth instead of key/token. Only one of oauth_credentials or token_credentials should be set."
+  type = object({
+    client_id     = string
+    client_secret = string
+  })
+  default   = null
+  sensitive = true
+}
+
+variable "oauth_secret" {
+  description = "OAuth secret store configuration. Only needed to customize the secret name or to reference a pre-existing secret (create = false). When null and oauth_credentials is set, the module creates a secret with the default name."
+  type = object({
+    create = optional(bool, true)
+    name   = optional(string, "mcd/agent/oauth")
+  })
+  default = null
 }
 
 variable "integration_secrets" {
