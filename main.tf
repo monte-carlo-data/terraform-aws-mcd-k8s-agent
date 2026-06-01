@@ -25,9 +25,9 @@ locals {
   cluster_endpoint       = var.cluster.create ? module.eks[0].cluster_endpoint : data.aws_eks_cluster.existing[0].endpoint
   cluster_ca_certificate = base64decode(var.cluster.create ? module.eks[0].cluster_certificate_authority_data : data.aws_eks_cluster.existing[0].certificate_authority[0].data)
 
-  # OAuth is active when credentials are provided OR when using a pre-existing OAuth secret
-  use_oauth           = var.oauth_credentials != null || !var.oauth_secret.create
-  create_oauth_secret = var.oauth_credentials != null && var.oauth_secret.create
+  use_existing_oauth_secret = !var.oauth_secret.create
+  create_oauth_secret       = var.oauth_credentials != null && var.oauth_secret.create
+  use_oauth                 = var.oauth_credentials != null || local.use_existing_oauth_secret
 }
 
 # -----------------------------------------------------------------------------
