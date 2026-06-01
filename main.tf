@@ -311,6 +311,17 @@ resource "aws_iam_role" "mcd_secrets_access_role" {
   name               = "${local.effective_cluster_name}-mcd-agent-secrets-access"
   assume_role_policy = data.aws_iam_policy_document.eso_assume_role.json
   tags               = local.default_tags
+
+  lifecycle {
+    precondition {
+      condition     = var.oauth_credentials == null || (var.token_credentials.mcd_id == null && var.token_credentials.mcd_token == null)
+      error_message = "Only one of oauth_credentials or token_credentials should be set, not both."
+    }
+    precondition {
+      condition     = var.oauth_credentials != null || !var.token_secret.create || (var.token_credentials.mcd_id != null && var.token_credentials.mcd_token != null)
+      error_message = "Both mcd_id and mcd_token are required in token_credentials when token_secret.create is true and oauth_credentials is not set."
+    }
+  }
 }
 
 resource "aws_iam_role_policy" "mcd_agent_token_secret_access" {
