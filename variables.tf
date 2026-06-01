@@ -88,12 +88,12 @@ variable "oauth_credentials" {
 }
 
 variable "oauth_secret" {
-  description = "OAuth secret store configuration."
+  description = "OAuth secret store configuration. Only needed to customize the secret name or to reference a pre-existing secret (create = false). When null and oauth_credentials is set, the module creates a secret with the default name."
   type = object({
     create = optional(bool, true)
     name   = optional(string, "mcd/agent/oauth")
   })
-  default = {}
+  default = null
 }
 
 variable "integration_secrets" {

@@ -25,9 +25,9 @@ locals {
   cluster_endpoint       = var.cluster.create ? module.eks[0].cluster_endpoint : data.aws_eks_cluster.existing[0].endpoint
   cluster_ca_certificate = base64decode(var.cluster.create ? module.eks[0].cluster_certificate_authority_data : data.aws_eks_cluster.existing[0].certificate_authority[0].data)
 
-  use_existing_oauth_secret = !var.oauth_secret.create
-  create_oauth_secret       = var.oauth_credentials != null && var.oauth_secret.create
-  use_oauth                 = var.oauth_credentials != null || local.use_existing_oauth_secret
+  use_oauth           = var.oauth_credentials != null || var.oauth_secret != null
+  create_oauth_secret = var.oauth_credentials != null && (var.oauth_secret == null || var.oauth_secret.create)
+  oauth_secret_name   = var.oauth_secret != null ? var.oauth_secret.name : "mcd/agent/oauth"
 }
 
 # -----------------------------------------------------------------------------
@@ -348,7 +348,7 @@ resource "aws_iam_role_policy" "mcd_agent_token_secret_access" {
             local.create_oauth_secret ? [
               aws_secretsmanager_secret.mcd_agent_oauth[0].arn
               ] : [
-              "arn:${data.aws_partition.current.partition}:secretsmanager:${local.region}:${data.aws_caller_identity.current.account_id}:secret:${var.oauth_secret.name}*"
+              "arn:${data.aws_partition.current.partition}:secretsmanager:${local.region}:${data.aws_caller_identity.current.account_id}:secret:${local.oauth_secret_name}*"
             ]
           ) : [],
           [for s in var.integration_secrets :
@@ -391,7 +391,7 @@ resource "aws_secretsmanager_secret_version" "mcd_agent_token_version" {
 
 resource "aws_secretsmanager_secret" "mcd_agent_oauth" {
   count                          = local.create_oauth_secret ? 1 : 0
-  name                           = var.oauth_secret.name
+  name                           = local.oauth_secret_name
   force_overwrite_replica_secret = true
   tags                           = local.default_tags
 }
@@ -465,7 +465,7 @@ locals {
   auth_helm_values = local.use_oauth ? {
     oauthSecret = {
       remoteRef = {
-        key = var.oauth_secret.name
+        key = local.oauth_secret_name
       }
     }
     } : {
