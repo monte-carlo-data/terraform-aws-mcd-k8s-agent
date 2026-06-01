@@ -7,7 +7,7 @@ This module deploys the [Monte Carlo](https://www.montecarlodata.com/) container
 - [Terraform](https://www.terraform.io/downloads.html) >= 1.9
 - [AWS CLI](https://aws.amazon.com/cli/) with [authentication](https://registry.terraform.io/providers/hashicorp/aws/latest/docs#authentication-and-configuration)
 - [kubectl](https://kubernetes.io/docs/tasks/tools/) for cluster access
-- A Monte Carlo account with agent credentials (mcd_id and mcd_token)
+- A Monte Carlo account with agent credentials (mcd_id and mcd_token) or OAuth client credentials (client_id and client_secret)
 - **(PrivateLink only)** Before deploying with `private_link` enabled, contact Monte Carlo support to request that your AWS account be allowed for PrivateLink. You must wait for Monte Carlo to confirm the account has been allowed before proceeding with deployment.
 
 ## Provider Configuration
@@ -61,6 +61,41 @@ token_secret = {
 }
 ```
 
+### OAuth authentication
+
+As an alternative to key/token authentication, you can use OAuth 2.0 Client Credentials. Only one authentication method should be configured at a time.
+
+**Option 1 -- Provide OAuth credentials (recommended):** The module creates and populates the secret in AWS Secrets Manager.
+
+```hcl
+oauth_credentials = {
+  client_id     = "your-client-id"
+  client_secret = "your-client-secret"
+}
+```
+
+**Option 2 -- Use a pre-existing OAuth secret:** Point the module to an existing secret in AWS Secrets Manager by name. The secret must be in the same region as the module deployment. The secret value must be a JSON object with the following format:
+
+```json
+{
+  "client_id": "YOUR_CLIENT_ID",
+  "client_secret": "YOUR_CLIENT_SECRET"
+}
+```
+
+```hcl
+oauth_secret = {
+  create = false
+  name   = "my-existing-oauth-secret"
+}
+```
+
+When using OAuth, omit `token_credentials` entirely. If you need to override the token endpoint (uncommon), set `oauth_token_endpoint`:
+
+```hcl
+oauth_token_endpoint = "https://custom-auth.example.com/oauth/token"
+```
+
 All examples below require the `aws` provider configured as described in [Provider Configuration](#provider-configuration).
 
 ### Full deployment (new cluster)
@@ -78,6 +113,29 @@ module "mcd_agent" {
   token_credentials = {
     mcd_id    = var.mcd_id
     mcd_token = var.mcd_token
+  }
+
+  helm = {
+    chart_version = "0.0.2"
+  }
+}
+```
+
+### Full deployment with OAuth
+
+```hcl
+provider "aws" {
+  region = "us-east-1"
+}
+
+module "mcd_agent" {
+  source = "monte-carlo-data/mcd-agent-k8s/aws"
+
+  backend_service_url = "<backend_service_url>"
+
+  oauth_credentials = {
+    client_id     = var.oauth_client_id
+    client_secret = var.oauth_client_secret
   }
 
   helm = {
@@ -264,18 +322,20 @@ kubectl exec -n mcd-agent deploy/mcd-agent-deployment -- \
 
 ## Outputs
 
-| Name                       | Description                                          |
-|----------------------------|------------------------------------------------------|
-| cluster_endpoint           | Endpoint for EKS control plane                       |
-| cluster_name               | EKS cluster name                                     |
-| storage_bucket_name        | S3 bucket name for agent storage                     |
-| pod_identity_role_arn      | IAM role ARN for pod identity                        |
-| eso_role_arn               | IAM role ARN for External Secrets Operator            |
+| Name                        | Description                                          |
+|-----------------------------|------------------------------------------------------|
+| cluster_endpoint            | Endpoint for EKS control plane                       |
+| cluster_name                | EKS cluster name                                     |
+| storage_bucket_name         | S3 bucket name for agent storage                     |
+| pod_identity_role_arn       | IAM role ARN for pod identity                        |
+| eso_role_arn                | IAM role ARN for External Secrets Operator            |
 | mcd_secrets_access_role_arn | IAM role ARN for ESO to access Secrets Manager       |
-| vpce_id                    | ID of the Monte Carlo PrivateLink VPC endpoint       |
-| vpce_dns_entry             | DNS entries for the PrivateLink VPC endpoint          |
-| vpc_endpoint_ids           | IDs of AWS service VPC endpoints (S3, SM, STS, EC2)  |
-| helm_values                | Helm values for manual deployment (sensitive)         |
+| mcd_agent_token_secret_arn  | ARN of the Secrets Manager secret for the agent token |
+| mcd_agent_oauth_secret_arn  | ARN of the Secrets Manager secret for OAuth credentials |
+| vpce_id                     | ID of the Monte Carlo PrivateLink VPC endpoint       |
+| vpce_dns_entry              | DNS entries for the PrivateLink VPC endpoint          |
+| vpc_endpoint_ids            | IDs of AWS service VPC endpoints (S3, SM, STS, EC2)  |
+| helm_values                 | Helm values for manual deployment (sensitive)         |
 
 ## Releases and Development
 

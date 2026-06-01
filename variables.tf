@@ -77,9 +77,39 @@ variable "token_credentials" {
   default   = {}
 
   validation {
-    condition     = !var.token_secret.create || (var.token_credentials.mcd_id != null && var.token_credentials.mcd_token != null)
-    error_message = "Both mcd_id and mcd_token are required in token_credentials when token_secret.create is true."
+    condition     = var.oauth_credentials != null || !var.token_secret.create || (var.token_credentials.mcd_id != null && var.token_credentials.mcd_token != null)
+    error_message = "Both mcd_id and mcd_token are required in token_credentials when token_secret.create is true and oauth_credentials is not set."
   }
+}
+
+variable "oauth_credentials" {
+  description = "OAuth client credentials for agent authentication. If provided, the module creates a secret in AWS Secrets Manager and configures the Helm chart to use OAuth instead of key/token. Only one of oauth_credentials or token_credentials should be set."
+  type = object({
+    client_id     = string
+    client_secret = string
+  })
+  default   = null
+  sensitive = true
+
+  validation {
+    condition     = var.oauth_credentials == null || (var.token_credentials.mcd_id == null && var.token_credentials.mcd_token == null)
+    error_message = "Only one of oauth_credentials or token_credentials should be set, not both."
+  }
+}
+
+variable "oauth_secret" {
+  description = "OAuth secret store configuration."
+  type = object({
+    create = optional(bool, true)
+    name   = optional(string, "mcd/agent/oauth")
+  })
+  default = {}
+}
+
+variable "oauth_token_endpoint" {
+  description = "Override the OAuth token endpoint URL. By default the agent derives it from the backend service URL. Only needed for non-standard setups."
+  type        = string
+  default     = ""
 }
 
 variable "integration_secrets" {
