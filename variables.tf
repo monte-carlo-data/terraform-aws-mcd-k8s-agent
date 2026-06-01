@@ -96,12 +96,6 @@ variable "oauth_secret" {
   default = {}
 }
 
-variable "oauth_token_endpoint" {
-  description = "Override the OAuth token endpoint URL. By default the agent derives it from the backend service URL. Only needed for non-standard setups."
-  type        = string
-  default     = ""
-}
-
 variable "integration_secrets" {
   description = "Integration secrets to sync from the cloud secret store."
   type = list(object({

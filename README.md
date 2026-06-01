@@ -90,11 +90,7 @@ oauth_secret = {
 }
 ```
 
-When using OAuth, omit `token_credentials` entirely. If you need to override the token endpoint (uncommon), set `oauth_token_endpoint`:
-
-```hcl
-oauth_token_endpoint = "https://custom-auth.example.com/oauth/token"
-```
+When using OAuth, omit `token_credentials` entirely.
 
 All examples below require the `aws` provider configured as described in [Provider Configuration](#provider-configuration).
 

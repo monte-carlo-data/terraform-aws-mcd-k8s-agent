@@ -463,14 +463,11 @@ resource "helm_release" "mcd_agent" {
 
 locals {
   auth_helm_values = local.use_oauth ? {
-    oauthSecret = merge(
-      {
-        remoteRef = {
-          key = var.oauth_secret.name
-        }
-      },
-      var.oauth_token_endpoint != "" ? { tokenEndpoint = var.oauth_token_endpoint } : {}
-    )
+    oauthSecret = {
+      remoteRef = {
+        key = var.oauth_secret.name
+      }
+    }
     } : {
     tokenSecret = {
       remoteRef = {
