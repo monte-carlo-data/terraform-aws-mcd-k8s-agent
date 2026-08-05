@@ -114,8 +114,42 @@ variable "agent" {
     image         = optional(string, "montecarlodata/agent:latest-generic")
     pull_policy   = optional(string, "Always")
     replica_count = optional(number, 2)
+
+    # Concurrent operations a single replica processes. Chart default is 18.
+    ops_runner_thread_count = optional(number, null)
+
+    # Pod resource requests/limits, e.g.
+    #   { requests = { cpu = "500m", memory = "512Mi" }, limits = { cpu = "2" } }
+    # At least requests must be set when autoscaling is enabled.
+    resources = optional(map(map(string)), null)
+
+    # Horizontal Pod Autoscaler. Supplying this object enables autoscaling
+    # unless enabled is explicitly set to false. When enabled, replica_count
+    # is ignored and the HPA manages the replica count.
+    autoscaling = optional(object({
+      enabled                              = optional(bool, true)
+      min_replicas                         = optional(number, 2)
+      max_replicas                         = optional(number, 5)
+      target_cpu_utilization_percentage    = optional(number, 70)
+      target_memory_utilization_percentage = optional(number, null)
+    }), null)
   })
   default = {}
+
+  validation {
+    condition     = var.agent.resources == null || length(setsubtract(keys(var.agent.resources), ["requests", "limits"])) == 0
+    error_message = "agent.resources may only contain \"requests\" and \"limits\" keys."
+  }
+
+  validation {
+    condition     = try(var.agent.autoscaling.enabled, false) == false || try(var.agent.resources["requests"], null) != null
+    error_message = "agent.resources.requests must be set when agent.autoscaling is enabled — the HorizontalPodAutoscaler uses requests as its utilization baseline."
+  }
+
+  validation {
+    condition     = try(var.agent.autoscaling.min_replicas <= var.agent.autoscaling.max_replicas, true)
+    error_message = "agent.autoscaling.min_replicas must be less than or equal to agent.autoscaling.max_replicas."
+  }
 }
 
 # --- Helm Deployment ---
