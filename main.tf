@@ -462,6 +462,29 @@ resource "helm_release" "mcd_agent" {
 }
 
 locals {
+  # Optional container tuning. Each key is omitted from the rendered values
+  # entirely when its variable is unset, so the chart's own defaults apply.
+  agent_container_tuning = merge(
+    var.agent.ops_runner_thread_count == null ? {} : {
+      opsRunnerThreadCount = tostring(var.agent.ops_runner_thread_count)
+    },
+    var.agent.resources == null ? {} : {
+      resources = var.agent.resources
+    },
+  )
+
+  # Rendered only when agent.autoscaling is supplied, so deployments that don't
+  # use it are unaffected.
+  agent_autoscaling_values = var.agent.autoscaling == null ? {} : {
+    autoscaling = {
+      enabled                           = var.agent.autoscaling.enabled
+      minReplicas                       = var.agent.autoscaling.min_replicas
+      maxReplicas                       = var.agent.autoscaling.max_replicas
+      targetCPUUtilizationPercentage    = var.agent.autoscaling.target_cpu_utilization_percentage
+      targetMemoryUtilizationPercentage = var.agent.autoscaling.target_memory_utilization_percentage
+    }
+  }
+
   auth_helm_values = local.use_oauth ? {
     oauthSecret = {
       remoteRef = {
@@ -487,11 +510,14 @@ locals {
         tag        = length(split(":", var.agent.image)) > 1 ? split(":", var.agent.image)[1] : "latest-generic"
       }
 
-      container = {
-        backendServiceUrl = var.backend_service_url
-        storageBucketName = local.effective_bucket_name
-        storageType       = "S3"
-      }
+      container = merge(
+        {
+          backendServiceUrl = var.backend_service_url
+          storageBucketName = local.effective_bucket_name
+          storageType       = "S3"
+        },
+        local.agent_container_tuning,
+      )
 
       secretStore = {
         provider = {
@@ -515,6 +541,7 @@ locals {
       logShipping      = var.helm.log_shipping
       metricsCollector = { enabled = var.helm.enabled_metrics_collector }
     },
+    local.agent_autoscaling_values,
     local.auth_helm_values
   )
 
