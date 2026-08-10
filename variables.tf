@@ -146,7 +146,10 @@ variable "agent" {
   default = {}
 
   validation {
-    condition     = var.agent.resources == null || length(setsubtract(keys(var.agent.resources), ["requests", "limits"])) == 0
+    # try() rather than a null guard on the left of ||: Terraform 1.9 evaluates
+    # both operands, so keys(null) errors before the guard can take effect. A
+    # genuinely bad key set still makes length() non-zero and fails validation.
+    condition     = try(length(setsubtract(keys(var.agent.resources), ["requests", "limits"])) == 0, true)
     error_message = "agent.resources may only contain \"requests\" and \"limits\" keys."
   }
 
