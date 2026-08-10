@@ -3,7 +3,7 @@ version: 2.1
 jobs:
   run-sanity-check:
     docker:
-      - image: hashicorp/terraform:1.9
+      - image: hashicorp/terraform:1.12
     steps:
       - checkout
       - run:
