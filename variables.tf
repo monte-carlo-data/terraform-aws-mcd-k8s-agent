@@ -14,12 +14,21 @@ variable "cluster" {
     name                  = optional(string, null)
     existing_cluster_name = optional(string, null)
     kubernetes_version    = optional(string, "1.35")
+    upgrade_policy        = optional(string, null)
     compute_config = optional(object({
       enabled    = bool
       node_pools = list(string)
     }), { enabled = true, node_pools = ["general-purpose"] })
   })
   default = {}
+
+  validation {
+    condition = (
+      var.cluster.upgrade_policy == null ||
+      contains(["STANDARD", "EXTENDED"], coalesce(var.cluster.upgrade_policy, "STANDARD"))
+    )
+    error_message = "cluster.upgrade_policy must be either \"STANDARD\" or \"EXTENDED\"."
+  }
 }
 
 # --- Networking ---
