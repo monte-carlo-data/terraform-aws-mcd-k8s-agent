@@ -99,6 +99,13 @@ module "eks" {
   kubernetes_version = var.cluster.kubernetes_version
   tags               = local.default_tags
 
+  # Left unset by default so AWS applies its own default (EXTENDED). Opting in
+  # to STANDARD means AWS force upgrades the cluster once standard support ends
+  # rather than moving it to paid extended support.
+  upgrade_policy = var.cluster.upgrade_policy == null ? null : {
+    support_type = var.cluster.upgrade_policy
+  }
+
   endpoint_public_access                   = true
   enable_cluster_creator_admin_permissions = true
 

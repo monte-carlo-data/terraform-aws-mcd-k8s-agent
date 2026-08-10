@@ -195,6 +195,32 @@ module "mcd_agent" {
 }
 ```
 
+### Pinning the Kubernetes version and support policy
+
+```hcl
+module "mcd_agent" {
+  source = "monte-carlo-data/mcd-agent-k8s/aws"
+
+  backend_service_url = "<backend_service_url>"
+
+  cluster = {
+    kubernetes_version = "1.36"
+    upgrade_policy     = "STANDARD"
+  }
+}
+```
+
+`upgrade_policy` accepts `STANDARD` or `EXTENDED`. Leaving it unset (the default) lets AWS apply its own default of `EXTENDED`.
+
+The distinction matters when a Kubernetes version reaches the end of standard support:
+
+| Value | Behaviour at end of standard support |
+|---|---|
+| `EXTENDED` | The cluster moves to extended support and keeps running, at additional cost. |
+| `STANDARD` | The cluster is **automatically upgraded** by AWS to the next version, at no additional cost. |
+
+Choose `STANDARD` if an unplanned upgrade is preferable to an unplanned bill, and `EXTENDED` if you need to control exactly when upgrades happen.
+
 ### Infrastructure only (manual Helm deployment)
 
 ```hcl

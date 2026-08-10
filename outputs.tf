@@ -50,7 +50,7 @@ output "mcd_agent_token_secret_arn" {
 
 output "mcd_agent_oauth_secret_arn" {
   description = "ARN of the Secrets Manager secret for the agent OAuth credentials."
-  value       = local.create_oauth_secret ? aws_secretsmanager_secret.mcd_agent_oauth[0].arn : null
+  value       = nonsensitive(local.create_oauth_secret) ? aws_secretsmanager_secret.mcd_agent_oauth[0].arn : null
 }
 
 output "namespace" {
