@@ -185,6 +185,70 @@ variable "helm" {
   }
 }
 
+# --- Identity ---
+
+variable "identity" {
+  description = <<-EOT
+    How the agent's pods authenticate to AWS: EKS Pod Identity or IRSA.
+
+    auth_mode:
+      "pod_identity" (default) — EKS Pod Identity. The module creates the two
+      Pod Identity associations (agent + External Secrets Operator service
+      accounts) and roles trusted by the pods.eks.amazonaws.com service
+      principal. The cluster must have the eks-pod-identity-agent EKS add-on
+      installed (the module installs it when it creates the cluster itself;
+      on an existing cluster you must install it — without it every credential
+      fetch fails at runtime: pods hang in ContainerCreating and ExternalSecrets
+      report InvalidProviderConfig).
+
+      "irsa" — IAM Roles for Service Accounts. The module creates no Pod
+      Identity associations; instead the agent and ESO service accounts are
+      annotated (eks.amazonaws.com/role-arn) via Helm values and the roles are
+      trusted via the cluster's OIDC identity provider with per-service-account
+      :sub conditions. Required when the agent joins a cluster whose workloads
+      already use IRSA (e.g. the Agent Observability data platform's cluster):
+      a Pod Identity association on a shared service account would rebind it
+      away from its existing IRSA identity, and the association's injected
+      credential endpoint outranks the IRSA annotation, so the two mechanisms
+      must never be mixed on one service account.
+
+    oidc_provider_arn:
+      Override for the cluster's IAM OIDC identity provider ARN. When null
+      (default) it is resolved automatically: from the module-created cluster,
+      or looked up by the existing cluster's issuer URL. The provider must
+      already exist in IAM for IRSA — the lookup fails at plan time otherwise,
+      which is the intended fail-fast.
+
+    existing_eso_role_arn:
+      Required in irsa mode when helm.install_external_secrets_operator is
+      false: the IRSA role of the External Secrets Operator that already runs
+      in the cluster. The module grants it sts:AssumeRole on the module's
+      secrets-access role (and trusts it), so the agent's SecretStore can sync
+      through the pre-existing ESO.
+  EOT
+  type = object({
+    auth_mode             = optional(string, "pod_identity")
+    oidc_provider_arn     = optional(string, null)
+    existing_eso_role_arn = optional(string, null)
+  })
+  default = {}
+
+  validation {
+    condition     = contains(["pod_identity", "irsa"], coalesce(try(var.identity.auth_mode, null), "pod_identity"))
+    error_message = "identity.auth_mode must be either \"pod_identity\" or \"irsa\"."
+  }
+
+  validation {
+    condition = (
+      coalesce(try(var.identity.auth_mode, null), "pod_identity") == "pod_identity" ||
+      var.helm.install_external_secrets_operator ||
+      !var.helm.deploy_agent ||
+      try(var.identity.existing_eso_role_arn, null) != null
+    )
+    error_message = "identity.existing_eso_role_arn is required when auth_mode = \"irsa\" and an existing External Secrets Operator is reused (helm.install_external_secrets_operator = false): without it the agent's SecretStore has no identity to read its token secret through."
+  }
+}
+
 variable "custom_values" {
   description = "Custom Helm values to merge with module-generated values. Accepts any map matching the chart's values.yaml schema."
   type        = any

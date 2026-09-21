@@ -28,6 +28,62 @@ locals {
   use_oauth           = var.oauth_credentials != null || var.oauth_secret != null
   create_oauth_secret = var.oauth_credentials != null && (var.oauth_secret == null || var.oauth_secret.create)
   oauth_secret_name   = var.oauth_secret != null ? var.oauth_secret.name : "mcd/agent/oauth"
+
+  # --- Identity (Pod Identity vs IRSA) ---
+
+  use_irsa = coalesce(var.identity.auth_mode, "pod_identity") == "irsa"
+
+  # The cluster's IAM OIDC identity provider, needed only in irsa mode. An
+  # explicit identity.oidc_provider_arn wins; otherwise the module-created
+  # cluster's provider, or a lookup by the existing cluster's issuer URL —
+  # which fails at plan time when the cluster has no OIDC provider in IAM,
+  # the intended fail-fast for clusters that never enabled IRSA.
+  oidc_provider_arn = (
+    var.identity.oidc_provider_arn != null ? var.identity.oidc_provider_arn :
+    var.cluster.create ? module.eks[0].oidc_provider_arn :
+    one(data.aws_iam_openid_connect_provider.existing[*].arn)
+  )
+
+  # Host/path portion of the issuer URL (no scheme), as used in the
+  # trust-policy :sub / :aud condition variable names.
+  oidc_provider_id = replace(
+    var.cluster.create ? module.eks[0].oidc_provider : data.aws_eks_cluster.existing[0].identity[0].oidc[0].issuer,
+    "https://", ""
+  )
+
+  # IRSA trust policies, one per service account. Referenced only when
+  # use_irsa is true; in pod_identity mode the Federated principal resolves to
+  # null but the policy is never attached to anything.
+  irsa_trust_policy = {
+    agent = jsonencode({
+      Version = "2012-10-17"
+      Statement = [{
+        Effect    = "Allow"
+        Action    = "sts:AssumeRoleWithWebIdentity"
+        Principal = { Federated = local.oidc_provider_arn }
+        Condition = {
+          StringEquals = {
+            "${local.oidc_provider_id}:sub" = "system:serviceaccount:${local.namespace}:${local.service_account_name}"
+            "${local.oidc_provider_id}:aud" = ["sts.amazonaws.com"]
+          }
+        }
+      }]
+    })
+    eso = jsonencode({
+      Version = "2012-10-17"
+      Statement = [{
+        Effect    = "Allow"
+        Action    = "sts:AssumeRoleWithWebIdentity"
+        Principal = { Federated = local.oidc_provider_arn }
+        Condition = {
+          StringEquals = {
+            "${local.oidc_provider_id}:sub" = "system:serviceaccount:external-secrets:external-secrets"
+            "${local.oidc_provider_id}:aud" = ["sts.amazonaws.com"]
+          }
+        }
+      }]
+    })
+  }
 }
 
 # -----------------------------------------------------------------------------
@@ -46,6 +102,14 @@ data "aws_eks_cluster" "existing" {
 
 data "aws_eks_cluster_auth" "cluster" {
   name = local.effective_cluster_name
+}
+
+# IRSA on an existing cluster: look up the cluster's IAM OIDC identity provider
+# by issuer URL. Plan fails when none exists — the cluster must have IRSA
+# enabled before auth_mode = "irsa" can be used.
+data "aws_iam_openid_connect_provider" "existing" {
+  count = !var.cluster.create && local.use_irsa && var.identity.oidc_provider_arn == null ? 1 : 0
+  url   = data.aws_eks_cluster.existing[0].identity[0].oidc[0].issuer
 }
 
 # -----------------------------------------------------------------------------
@@ -109,7 +173,9 @@ module "eks" {
   endpoint_public_access                   = true
   enable_cluster_creator_admin_permissions = true
 
-  addons = {
+  # Pod Identity agent is only needed for the default identity mode; in irsa
+  # mode the service-account annotations are the whole mechanism.
+  addons = local.use_irsa ? {} : {
     eks-pod-identity-agent = {
       most_recent = true
     }
@@ -218,7 +284,7 @@ resource "aws_s3_bucket_policy" "mcd_agent_store_ssl_policy" {
 }
 
 # -----------------------------------------------------------------------------
-# IAM - Pod Identity Role
+# IAM - Agent Role (Pod Identity or IRSA)
 # -----------------------------------------------------------------------------
 
 data "aws_iam_policy_document" "assume_role" {
@@ -238,12 +304,15 @@ data "aws_iam_policy_document" "assume_role" {
 }
 
 resource "aws_iam_role" "pod_identity" {
-  name               = "${local.effective_cluster_name}-pod-identity"
-  assume_role_policy = data.aws_iam_policy_document.assume_role.json
+  name = local.use_irsa ? "${local.effective_cluster_name}-irsa" : "${local.effective_cluster_name}-pod-identity"
+
+  assume_role_policy = local.use_irsa ? local.irsa_trust_policy.agent : data.aws_iam_policy_document.assume_role.json
   tags               = local.default_tags
 }
 
 resource "aws_eks_pod_identity_association" "agent_association" {
+  count = local.use_irsa ? 0 : 1
+
   cluster_name    = local.effective_cluster_name
   namespace       = local.namespace
   service_account = local.service_account_name
@@ -285,12 +354,18 @@ resource "aws_iam_role_policy" "mcd_agent_service_s3_policy" {
 # -----------------------------------------------------------------------------
 
 resource "aws_iam_role" "eso_role" {
-  name               = "${local.effective_cluster_name}-eso-role"
-  assume_role_policy = data.aws_iam_policy_document.assume_role.json
+  name = "${local.effective_cluster_name}-eso-role"
+
+  # In irsa mode this role is bound by the service-account annotation on the
+  # module-installed ESO release; with a pre-existing ESO it is unused and
+  # identity.existing_eso_role_arn takes over instead (see below).
+  assume_role_policy = local.use_irsa ? local.irsa_trust_policy.eso : data.aws_iam_policy_document.assume_role.json
   tags               = local.default_tags
 }
 
 resource "aws_eks_pod_identity_association" "eso_association" {
+  count = local.use_irsa ? 0 : 1
+
   cluster_name    = local.effective_cluster_name
   namespace       = "external-secrets"
   service_account = "external-secrets"
@@ -303,8 +378,10 @@ data "aws_iam_policy_document" "eso_assume_role" {
     effect = "Allow"
 
     principals {
-      type        = "AWS"
-      identifiers = [aws_iam_role.eso_role.arn]
+      type = "AWS"
+      # The module's own ESO role, plus — when an existing ESO is reused —
+      # the identity.existing_eso_role_arn it actually runs under.
+      identifiers = compact([aws_iam_role.eso_role.arn, var.identity.existing_eso_role_arn])
     }
 
     actions = [
@@ -312,6 +389,37 @@ data "aws_iam_policy_document" "eso_assume_role" {
       "sts:TagSession"
     ]
   }
+}
+
+# When the agent reuses a pre-existing ESO (helm.install_external_secrets_operator
+# = false), that ESO runs under a role the module does not own. Grant it
+# sts:AssumeRole on the module's secrets-access role so the agent's SecretStore
+# can sync through it. Additive and Terraform-managed — no out-of-band edits.
+data "aws_iam_role" "existing_eso" {
+  count = var.identity.existing_eso_role_arn != null ? 1 : 0
+  # The data source looks up by name; extract it from the provided ARN. (IAM
+  # role names cannot contain "/", so the last path segment is the name.)
+  name = element(regex("role/([^/]+)$", var.identity.existing_eso_role_arn), 0)
+}
+
+resource "aws_iam_role_policy" "existing_eso_assume_mcd_secrets" {
+  count = var.identity.existing_eso_role_arn != null ? 1 : 0
+  name  = "assume-mcd-agent-secrets-access"
+  role  = data.aws_iam_role.existing_eso[0].name
+
+  policy = jsonencode({
+    "Version" : "2012-10-17",
+    "Statement" : [
+      {
+        "Action" : [
+          "sts:AssumeRole",
+          "sts:TagSession"
+        ],
+        "Resource" : aws_iam_role.mcd_secrets_access_role.arn,
+        "Effect" : "Allow"
+      }
+    ]
+  })
 }
 
 resource "aws_iam_role" "mcd_secrets_access_role" {
@@ -424,6 +532,19 @@ resource "helm_release" "external_secrets" {
   namespace        = "external-secrets"
   create_namespace = true
 
+  # In irsa mode, bind the ESO service account to the module's ESO role via
+  # the standard eks.amazonaws.com/role-arn annotation instead of an EKS Pod
+  # Identity association.
+  values = local.use_irsa ? [
+    yamlencode({
+      serviceAccount = {
+        annotations = {
+          "eks.amazonaws.com/role-arn" = aws_iam_role.eso_role.arn
+        }
+      }
+    })
+  ] : []
+
   depends_on = [module.eks]
 }
 
@@ -506,6 +627,17 @@ locals {
     }
   }
 
+  # In irsa mode, bind the agent's service account to the module's IAM role
+  # via the standard eks.amazonaws.com/role-arn annotation instead of an EKS
+  # Pod Identity association.
+  identity_helm_values = local.use_irsa ? {
+    serviceAccount = {
+      annotations = {
+        "eks.amazonaws.com/role-arn" = aws_iam_role.pod_identity.arn
+      }
+    }
+  } : {}
+
   base_helm_values = merge(
     {
       namespace    = local.namespace
@@ -549,7 +681,8 @@ locals {
       metricsCollector = { enabled = var.helm.enabled_metrics_collector }
     },
     local.agent_autoscaling_values,
-    local.auth_helm_values
+    local.auth_helm_values,
+    local.identity_helm_values
   )
 
   # Merge custom_values over base, then re-apply typed module fields

@@ -195,6 +195,63 @@ module "mcd_agent" {
 }
 ```
 
+### Identity: IRSA instead of EKS Pod Identity
+
+By default the module binds its pods to IAM with **EKS Pod Identity**: it creates the
+`eks-pod-identity-agent` add-on (when it creates the cluster) and two Pod Identity
+associations — the agent's and the External Secrets Operator's service accounts. The
+cluster must have that add-on installed; on an existing cluster without it, every
+credential fetch fails at runtime (pods stuck in `ContainerCreating`, ExternalSecrets
+reporting `InvalidProviderConfig`).
+
+Set `identity.auth_mode = "irsa"` to use **IRSA** (IAM Roles for Service Accounts)
+instead: the module creates no Pod Identity associations and no add-on, and binds both
+service accounts via the standard `eks.amazonaws.com/role-arn` annotation, with roles
+trusted through the cluster's OIDC identity provider. The cluster must already have an
+IAM OIDC provider (any cluster created by this module has one; for an existing cluster
+the module looks it up by issuer URL and fails at plan time when it is missing).
+
+**IRSA is required when the agent joins a cluster whose workloads already use IRSA**
+(for example, the Agent Observability data platform's cluster, or any cluster where a
+shared External Secrets Operator is bound by annotation): a Pod Identity association on
+a shared service account rebinds it away from its IRSA identity, and the association's
+injected credential endpoint outranks the IRSA annotation — the two mechanisms must
+never be mixed on one service account.
+
+When reusing a pre-existing External Secrets Operator
+(`helm.install_external_secrets_operator = false`), pass its role so the agent's
+SecretStore can sync through it:
+
+```hcl
+module "mcd_agent" {
+  source = "monte-carlo-data/mcd-agent-k8s/aws"
+
+  backend_service_url = "<backend_service_url>"
+
+  helm = {
+    chart_version                     = "<latest>"
+    install_external_secrets_operator = false # ESO already runs in this cluster
+  }
+
+  cluster = {
+    create                = false
+    existing_cluster_name = "my-cluster"
+  }
+
+  identity = {
+    auth_mode             = "irsa"
+    existing_eso_role_arn = "arn:aws:iam::<account-id>:role/<existing-eso-role>"
+  }
+
+  networking = {
+    create_vpc = false
+  }
+}
+```
+
+`identity.oidc_provider_arn` can override the provider lookup when the provider is
+managed elsewhere (e.g. by the root that owns the cluster).
+
 ### Pinning the Kubernetes version and support policy
 
 ```hcl
