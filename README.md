@@ -218,6 +218,30 @@ a shared service account rebinds it away from its IRSA identity, and the associa
 injected credential endpoint outranks the IRSA annotation — the two mechanisms must
 never be mixed on one service account.
 
+#### Bringing your own role
+
+Optionally, pass `identity.existing_agent_role_arn` to use a role you manage instead of
+letting the module create one. This never changes behavior for existing configurations —
+it is additive in every mode:
+
+```hcl
+  identity = {
+    auth_mode              = "irsa"
+    existing_agent_role_arn = "arn:aws:iam::<account-id>:role/<your-agent-role>"
+    existing_eso_role_arn  = "arn:aws:iam::<account-id>:role/<existing-eso-role>"
+  }
+```
+
+When supplied, the module creates **no agent role and no S3 policy** — it binds your role
+to the agent's service account (via the annotation in irsa mode, or the Pod Identity
+association in pod_identity mode). Your role must already carry the agent's permissions:
+the S3 actions from the [object storage](https://docs.getmontecarlo.com/docs/object-storage)
+policy, and `secretsmanager:GetSecretValue` on the agent's token secret and any
+integration secrets — one role may cover both.
+
+This pairs naturally with bring-your-own clusters (`cluster.create = false`), where the
+customer may prefer — or be restricted to — authoring IAM roles in their own Terraform.
+
 When reusing a pre-existing External Secrets Operator
 (`helm.install_external_secrets_operator = false`), pass its role so the agent's
 SecretStore can sync through it:

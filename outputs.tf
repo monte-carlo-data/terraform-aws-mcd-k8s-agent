@@ -29,8 +29,8 @@ output "storage_bucket_arn" {
 }
 
 output "pod_identity_role_arn" {
-  description = "IAM role ARN for pod identity."
-  value       = aws_iam_role.pod_identity.arn
+  description = "IAM role the agent pod runs as — module-created, or the customer-supplied identity.existing_agent_role_arn when provided."
+  value       = local.agent_role_arn
 }
 
 output "eso_role_arn" {

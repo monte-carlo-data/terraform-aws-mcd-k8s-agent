@@ -225,11 +225,23 @@ variable "identity" {
       in the cluster. The module grants it sts:AssumeRole on the module's
       secrets-access role (and trusts it), so the agent's SecretStore can sync
       through the pre-existing ESO.
+
+    existing_agent_role_arn:
+      Bring your own role for the agent pod instead of letting the module
+      create one. Optional in every mode (passing it never breaks existing
+      configurations), but recommended on clusters the module does not own:
+      the module then creates no agent role and no S3 policy, and binds YOUR
+      role to the agent's service account — via the Pod Identity association
+      (pod_identity mode) or the IRSA annotation (irsa mode). Your role must
+      carry the agent's permissions itself — see the object-storage
+      documentation for the exact S3 and Secrets Manager policy (one role may
+      cover both bucket access and reading the agent's credentials).
   EOT
   type = object({
-    auth_mode             = optional(string, "pod_identity")
-    oidc_provider_arn     = optional(string, null)
-    existing_eso_role_arn = optional(string, null)
+    auth_mode               = optional(string, "pod_identity")
+    oidc_provider_arn       = optional(string, null)
+    existing_eso_role_arn   = optional(string, null)
+    existing_agent_role_arn = optional(string, null)
   })
   default = {}
 

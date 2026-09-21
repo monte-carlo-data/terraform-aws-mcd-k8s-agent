@@ -33,6 +33,13 @@ locals {
 
   use_irsa = coalesce(var.identity.auth_mode, "pod_identity") == "irsa"
 
+  # The agent pod's role: the customer's own (identity.existing_agent_role_arn)
+  # or the module-managed one created below. When the customer supplies a role
+  # the module creates no agent role and no S3 policy — the customer's role
+  # must carry the agent's permissions itself (documented in object-storage).
+  creating_agent_role = var.identity.existing_agent_role_arn == null
+  agent_role_arn      = var.identity.existing_agent_role_arn != null ? var.identity.existing_agent_role_arn : aws_iam_role.pod_identity[0].arn
+
   # The cluster's IAM OIDC identity provider, needed only in irsa mode. An
   # explicit identity.oidc_provider_arn wins; otherwise the module-created
   # cluster's provider, or a lookup by the existing cluster's issuer URL —
@@ -304,6 +311,8 @@ data "aws_iam_policy_document" "assume_role" {
 }
 
 resource "aws_iam_role" "pod_identity" {
+  count = local.creating_agent_role ? 1 : 0
+
   name = local.use_irsa ? "${local.effective_cluster_name}-irsa" : "${local.effective_cluster_name}-pod-identity"
 
   assume_role_policy = local.use_irsa ? local.irsa_trust_policy.agent : data.aws_iam_policy_document.assume_role.json
@@ -316,11 +325,15 @@ resource "aws_eks_pod_identity_association" "agent_association" {
   cluster_name    = local.effective_cluster_name
   namespace       = local.namespace
   service_account = local.service_account_name
-  role_arn        = aws_iam_role.pod_identity.arn
+  role_arn        = local.agent_role_arn
   tags            = local.default_tags
 }
 
 resource "aws_iam_role_policy" "mcd_agent_service_s3_policy" {
+  # Skipped when the customer supplies their own role: the S3 permissions are
+  # part of the documented policy that role must already carry.
+  count = local.creating_agent_role ? 1 : 0
+
   name = "s3_policy"
   policy = jsonencode({
     "Version" : "2012-10-17",
@@ -346,7 +359,7 @@ resource "aws_iam_role_policy" "mcd_agent_service_s3_policy" {
       }
     ]
   })
-  role = aws_iam_role.pod_identity.id
+  role = aws_iam_role.pod_identity[0].id
 }
 
 # -----------------------------------------------------------------------------
@@ -633,7 +646,7 @@ locals {
   identity_helm_values = local.use_irsa ? {
     serviceAccount = {
       annotations = {
-        "eks.amazonaws.com/role-arn" = aws_iam_role.pod_identity.arn
+        "eks.amazonaws.com/role-arn" = local.agent_role_arn
       }
     }
   } : {}
