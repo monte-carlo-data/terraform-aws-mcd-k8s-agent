@@ -323,9 +323,12 @@ resource "aws_iam_role" "agent" {
   tags               = local.default_tags
 }
 
+# Indexed target: the pre-rename resource had no count, this one does, so the
+# unkeyed address would land on a no-key instance that no longer exists in
+# config (destroy + recreate instead of a move).
 moved {
   from = aws_iam_role.pod_identity
-  to   = aws_iam_role.agent
+  to   = aws_iam_role.agent[0]
 }
 
 resource "aws_eks_pod_identity_association" "agent_association" {
