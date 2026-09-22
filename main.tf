@@ -388,7 +388,12 @@ resource "aws_iam_role" "eso_role" {
 }
 
 resource "aws_eks_pod_identity_association" "eso_association" {
-  count = local.use_irsa ? 0 : 1
+  # Skipped in irsa mode (annotation binds the module-installed ESO instead),
+  # and also when the module's ESO role is not created because a pre-existing
+  # ESO is consumed via identity.existing_eso_role_arn — that ESO keeps its own
+  # binding, and the assume-grant on the existing role covers the SecretStore
+  # chain. Without this guard the association would reference a null role ARN.
+  count = local.use_irsa || !local.creating_eso_role ? 0 : 1
 
   cluster_name    = local.effective_cluster_name
   namespace       = "external-secrets"
