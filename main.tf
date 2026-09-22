@@ -40,6 +40,15 @@ locals {
   creating_agent_role = var.identity.existing_agent_role_arn == null
   agent_role_arn      = var.identity.existing_agent_role_arn != null ? var.identity.existing_agent_role_arn : aws_iam_role.pod_identity[0].arn
 
+  # The module's ESO role is only useful when the module installs (and binds)
+  # its own ESO, or when nothing else supplies the ESO identity. When a
+  # pre-existing ESO's role is supplied (identity.existing_eso_role_arn), the
+  # module-created role would be dead weight — and can collide with the
+  # existing role's name (both conventionally "<cluster>-eso-role"), so it is
+  # skipped entirely in that combination.
+  creating_eso_role = var.helm.install_external_secrets_operator || var.identity.existing_eso_role_arn == null
+  eso_role_arn      = one(aws_iam_role.eso_role[*].arn)
+
   # The cluster's IAM OIDC identity provider, needed only in irsa mode. An
   # explicit identity.oidc_provider_arn wins; otherwise the module-created
   # cluster's provider, or a lookup by the existing cluster's issuer URL —
@@ -367,11 +376,13 @@ resource "aws_iam_role_policy" "mcd_agent_service_s3_policy" {
 # -----------------------------------------------------------------------------
 
 resource "aws_iam_role" "eso_role" {
+  count = local.creating_eso_role ? 1 : 0
+
   name = "${local.effective_cluster_name}-eso-role"
 
   # In irsa mode this role is bound by the service-account annotation on the
   # module-installed ESO release; with a pre-existing ESO it is unused and
-  # identity.existing_eso_role_arn takes over instead (see below).
+  # identity.existing_eso_role_arn takes over instead (see above).
   assume_role_policy = local.use_irsa ? local.irsa_trust_policy.eso : data.aws_iam_policy_document.assume_role.json
   tags               = local.default_tags
 }
@@ -382,7 +393,7 @@ resource "aws_eks_pod_identity_association" "eso_association" {
   cluster_name    = local.effective_cluster_name
   namespace       = "external-secrets"
   service_account = "external-secrets"
-  role_arn        = aws_iam_role.eso_role.arn
+  role_arn        = local.eso_role_arn
   tags            = local.default_tags
 }
 
@@ -394,7 +405,7 @@ data "aws_iam_policy_document" "eso_assume_role" {
       type = "AWS"
       # The module's own ESO role, plus — when an existing ESO is reused —
       # the identity.existing_eso_role_arn it actually runs under.
-      identifiers = compact([aws_iam_role.eso_role.arn, var.identity.existing_eso_role_arn])
+      identifiers = compact([local.eso_role_arn, var.identity.existing_eso_role_arn])
     }
 
     actions = [
@@ -552,7 +563,7 @@ resource "helm_release" "external_secrets" {
     yamlencode({
       serviceAccount = {
         annotations = {
-          "eks.amazonaws.com/role-arn" = aws_iam_role.eso_role.arn
+          "eks.amazonaws.com/role-arn" = local.eso_role_arn
         }
       }
     })

@@ -35,7 +35,7 @@ output "pod_identity_role_arn" {
 
 output "eso_role_arn" {
   description = "IAM role ARN for External Secrets Operator."
-  value       = aws_iam_role.eso_role.arn
+  value       = local.eso_role_arn
 }
 
 output "mcd_secrets_access_role_arn" {
