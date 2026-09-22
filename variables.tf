@@ -189,56 +189,15 @@ variable "helm" {
 
 variable "identity" {
   description = <<-EOT
-    How the agent's pods authenticate to AWS: EKS Pod Identity or IRSA.
+    How the agent's pods authenticate to AWS.
 
-    auth_mode:
-      "pod_identity" (default) — EKS Pod Identity. The module creates the two
-      Pod Identity associations (agent + External Secrets Operator service
-      accounts) and roles trusted by the pods.eks.amazonaws.com service
-      principal. The cluster must have the eks-pod-identity-agent EKS add-on
-      installed (the module installs it when it creates the cluster itself;
-      on an existing cluster you must install it — without it every credential
-      fetch fails at runtime: pods hang in ContainerCreating and ExternalSecrets
-      report InvalidProviderConfig).
-
-      "irsa" — IAM Roles for Service Accounts. The module creates no Pod
-      Identity associations; instead the agent and ESO service accounts are
-      annotated (eks.amazonaws.com/role-arn) via Helm values and the roles are
-      trusted via the cluster's OIDC identity provider with per-service-account
-      :sub conditions. Required when the agent joins a cluster whose workloads
-      already use IRSA (e.g. the Agent Observability data platform's cluster):
-      a Pod Identity association on a shared service account would rebind it
-      away from its existing IRSA identity, and the association's injected
-      credential endpoint outranks the IRSA annotation, so the two mechanisms
-      must never be mixed on one service account.
-
-    oidc_provider_arn:
-      Override for the cluster's IAM OIDC identity provider ARN. When null
-      (default) it is resolved automatically: from the module-created cluster,
-      or looked up by the existing cluster's issuer URL. The provider must
-      already exist in IAM for IRSA — the lookup fails at plan time otherwise,
-      which is the intended fail-fast.
-
-    existing_eso_role_arn:
-      Required in irsa mode when helm.install_external_secrets_operator is
-      false: the IRSA role of the External Secrets Operator that already runs
-      in the cluster. The module grants it sts:AssumeRole on the module's
-      secrets-access role (and trusts it), so the agent's SecretStore can sync
-      through the pre-existing ESO.
-
-    existing_agent_role_arn:
-      Bring your own role for the agent pod instead of letting the module
-      create one. Optional in every mode (passing it never breaks existing
-      configurations), but recommended on clusters the module does not own:
-      the module then creates no agent role and no S3 policy, and binds YOUR
-      role to the agent's service account — via the Pod Identity association
-      (pod_identity mode) or the IRSA annotation (irsa mode). Your role must
-      carry the agent's permissions itself — see the object-storage
-      documentation for the exact S3 and Secrets Manager policy (one role may
-      cover both bucket access and reading the agent's credentials).
+    mode: "pod_identity" (default) requires the eks-pod-identity-agent add-on on the cluster;
+    "irsa" binds service accounts by annotation through the cluster's OIDC provider. The two
+    must never be mixed on one service account. See "Identity: IRSA instead of EKS Pod
+    Identity" in the README for the existing-role and OIDC-provider options.
   EOT
   type = object({
-    auth_mode               = optional(string, "pod_identity")
+    mode                    = optional(string, "pod_identity")
     oidc_provider_arn       = optional(string, null)
     existing_eso_role_arn   = optional(string, null)
     existing_agent_role_arn = optional(string, null)
@@ -246,18 +205,48 @@ variable "identity" {
   default = {}
 
   validation {
-    condition     = contains(["pod_identity", "irsa"], coalesce(try(var.identity.auth_mode, null), "pod_identity"))
-    error_message = "identity.auth_mode must be either \"pod_identity\" or \"irsa\"."
+    condition     = contains(["pod_identity", "irsa"], var.identity.mode)
+    error_message = "identity.mode must be either \"pod_identity\" or \"irsa\"."
   }
 
   validation {
     condition = (
-      coalesce(try(var.identity.auth_mode, null), "pod_identity") == "pod_identity" ||
+      var.identity.mode == "pod_identity" ||
       var.helm.install_external_secrets_operator ||
       !var.helm.deploy_agent ||
-      try(var.identity.existing_eso_role_arn, null) != null
+      var.identity.existing_eso_role_arn != null
     )
-    error_message = "identity.existing_eso_role_arn is required when auth_mode = \"irsa\" and an existing External Secrets Operator is reused (helm.install_external_secrets_operator = false): without it the agent's SecretStore has no identity to read its token secret through."
+    error_message = "identity.existing_eso_role_arn is required when mode = \"irsa\" and an existing External Secrets Operator is reused (helm.install_external_secrets_operator = false): without it the agent's SecretStore has no identity to read its token secret through."
+  }
+
+  validation {
+    condition     = var.identity.existing_eso_role_arn == null || can(regex("^arn:[^:]*:iam::[0-9]{12}:role/", var.identity.existing_eso_role_arn))
+    error_message = "identity.existing_eso_role_arn must be an IAM role ARN of the form arn:aws:iam::<account-id>:role/<name>."
+  }
+
+  validation {
+    condition     = var.identity.existing_agent_role_arn == null || can(regex("^arn:[^:]*:iam::[0-9]{12}:role/", var.identity.existing_agent_role_arn))
+    error_message = "identity.existing_agent_role_arn must be an IAM role ARN of the form arn:aws:iam::<account-id>:role/<name>."
+  }
+
+  validation {
+    condition     = var.identity.oidc_provider_arn == null || can(regex("^arn:[^:]*:iam::[0-9]{12}:oidc-provider/", var.identity.oidc_provider_arn))
+    error_message = "identity.oidc_provider_arn must be an IAM OIDC provider ARN of the form arn:aws:iam::<account-id>:oidc-provider/<host-path>."
+  }
+
+  validation {
+    condition     = var.identity.existing_eso_role_arn == null || !var.helm.install_external_secrets_operator
+    error_message = "identity.existing_eso_role_arn may only be set when helm.install_external_secrets_operator is false (reusing a pre-existing External Secrets Operator)."
+  }
+
+  validation {
+    condition     = var.identity.existing_agent_role_arn == null || var.storage.existing_bucket_name != null
+    error_message = "identity.existing_agent_role_arn requires storage.existing_bucket_name: the module-created bucket's name embeds a random ID that is unknowable before apply, so a pre-authored role cannot be scoped to it."
+  }
+
+  validation {
+    condition     = var.identity.mode == "irsa" || var.identity.oidc_provider_arn == null
+    error_message = "identity.oidc_provider_arn is only used in irsa mode and must be null when mode = \"pod_identity\"."
   }
 }
 

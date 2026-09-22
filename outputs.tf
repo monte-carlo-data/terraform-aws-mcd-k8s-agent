@@ -28,14 +28,24 @@ output "storage_bucket_arn" {
   value       = var.storage.create_bucket ? aws_s3_bucket.mcd_agent_store[0].arn : null
 }
 
-output "pod_identity_role_arn" {
-  description = "IAM role the agent pod runs as — module-created, or the customer-supplied identity.existing_agent_role_arn when provided."
+output "agent_role_arn" {
+  description = "IAM role the agent pod runs as — module-created, or the customer-supplied identity.existing_agent_role_arn when provided. In irsa mode this is the IRSA role bound via service-account annotation."
   value       = local.agent_role_arn
 }
 
+output "pod_identity_role_arn" {
+  description = "Deprecated alias for agent_role_arn, retained for backward compatibility; in irsa mode the role is bound via IRSA, not Pod Identity."
+  value       = local.agent_role_arn
+}
+
+output "agent_service_account_name" {
+  description = "Kubernetes service account the agent pod runs as; use <issuer>:sub = system:serviceaccount:<namespace>:<this value> when authoring a trust policy for a customer-supplied agent role."
+  value       = local.service_account_name
+}
+
 output "eso_role_arn" {
-  description = "IAM role ARN for External Secrets Operator."
-  value       = local.eso_role_arn
+  description = "IAM role the External Secrets Operator runs as — module-created, or the customer-supplied identity.existing_eso_role_arn when a pre-existing ESO is reused."
+  value       = local.effective_eso_role_arn
 }
 
 output "mcd_secrets_access_role_arn" {
@@ -45,7 +55,7 @@ output "mcd_secrets_access_role_arn" {
 
 output "mcd_agent_token_secret_arn" {
   description = "ARN of the Secrets Manager secret for the agent token."
-  value       = !local.use_oauth && var.token_secret.create ? aws_secretsmanager_secret.mcd_agent_token[0].arn : null
+  value       = !nonsensitive(local.use_oauth) && var.token_secret.create ? aws_secretsmanager_secret.mcd_agent_token[0].arn : null
 }
 
 output "mcd_agent_oauth_secret_arn" {
@@ -79,7 +89,7 @@ output "vpc_endpoint_ids" {
 }
 
 output "helm_values" {
-  description = "Helm values used for agent deployment. Use these for manual Helm deployment when deploy_agent is false."
+  description = "Helm values used for agent deployment. Use these for manual Helm deployment when deploy_agent is false. Contains the agent's authentication credentials."
   value       = local.helm_values_yaml
-  sensitive   = false
+  sensitive   = true
 }

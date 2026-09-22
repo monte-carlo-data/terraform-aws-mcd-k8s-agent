@@ -195,6 +195,11 @@ module "mcd_agent" {
 }
 ```
 
+> **Note:** The cluster must have the `eks-pod-identity-agent` EKS add-on installed for
+> the default identity mode (the module installs it only on clusters it creates). If it
+> does not, use `identity.mode = "irsa"` instead — see
+> [Identity: IRSA instead of EKS Pod Identity](#identity-irsa-instead-of-eks-pod-identity).
+
 ### Identity: IRSA instead of EKS Pod Identity
 
 By default the module binds its pods to IAM with **EKS Pod Identity**: it creates the
@@ -204,16 +209,19 @@ cluster must have that add-on installed; on an existing cluster without it, ever
 credential fetch fails at runtime (pods stuck in `ContainerCreating`, ExternalSecrets
 reporting `InvalidProviderConfig`).
 
-Set `identity.auth_mode = "irsa"` to use **IRSA** (IAM Roles for Service Accounts)
+Set `identity.mode = "irsa"` to use **IRSA** (IAM Roles for Service Accounts)
 instead: the module creates no Pod Identity associations and no add-on, and binds both
-service accounts via the standard `eks.amazonaws.com/role-arn` annotation, with roles
-trusted through the cluster's OIDC identity provider. The cluster must already have an
-IAM OIDC provider (any cluster created by this module has one; for an existing cluster
-the module looks it up by issuer URL and fails at plan time when it is missing).
+service accounts via the standard `eks.amazonaws.com/role-arn` annotation (both, when
+the module installs its own ESO), with roles trusted through the cluster's OIDC
+identity provider. The cluster must already have an IAM OIDC provider (any cluster
+created by this module has one; for an existing cluster the module looks it up by
+issuer URL and fails at plan time when it is missing — the lookup errors with an AWS
+`NoSuchEntity`-style message listing the issuer URL, which is the module's fail-fast
+working as intended).
 
 **IRSA is required when the agent joins a cluster whose workloads already use IRSA**
-(for example, the Agent Observability data platform's cluster, or any cluster where a
-shared External Secrets Operator is bound by annotation): a Pod Identity association on
+(for example, a cluster that already runs IRSA-bound workloads, such as a shared
+External Secrets Operator or cert-manager): a Pod Identity association on
 a shared service account rebinds it away from its IRSA identity, and the association's
 injected credential endpoint outranks the IRSA annotation — the two mechanisms must
 never be mixed on one service account.
@@ -226,25 +234,82 @@ it is additive in every mode:
 
 ```hcl
   identity = {
-    auth_mode              = "irsa"
+    mode                    = "irsa"
     existing_agent_role_arn = "arn:aws:iam::<account-id>:role/<your-agent-role>"
-    existing_eso_role_arn  = "arn:aws:iam::<account-id>:role/<existing-eso-role>"
   }
 ```
 
 When supplied, the module creates **no agent role and no S3 policy** — it binds your role
 to the agent's service account (via the annotation in irsa mode, or the Pod Identity
-association in pod_identity mode). Your role must already carry the agent's permissions:
-the S3 actions from the [object storage](https://docs.getmontecarlo.com/docs/object-storage)
-policy, and `secretsmanager:GetSecretValue` on the agent's token secret and any
-integration secrets — one role may cover both.
+association in pod_identity mode). Supplying it requires `storage.existing_bucket_name`:
+module-created bucket names embed a random ID that is unknowable before apply, so a
+pre-authored role cannot be scoped to one. Your role must already carry the agent's
+permissions on that bucket: the S3 actions from the
+[object storage](https://docs.getmontecarlo.com/docs/object-storage) policy, and
+`secretsmanager:GetSecretValue` on the agent's token secret and any integration
+secrets — one role may cover both.
+
+The role's trust policy must match the identity mode. These examples assume the default
+namespace (`mcd-agent`); the service-account name is also available as the
+`agent_service_account_name` output.
+
+`pod_identity` mode:
+
+```hcl
+data "aws_iam_policy_document" "agent_trust" {
+  statement {
+    effect  = "Allow"
+    actions = ["sts:AssumeRole", "sts:TagSession"]
+
+    principals {
+      type        = "Service"
+      identifiers = ["pods.eks.amazonaws.com"]
+    }
+  }
+}
+```
+
+`irsa` mode (`<oidc-provider-id>` is the cluster's issuer URL without the `https://`
+prefix, e.g. `oidc.eks.us-east-1.amazonaws.com/id/EXAMPLE`):
+
+```hcl
+data "aws_iam_policy_document" "agent_trust" {
+  statement {
+    effect  = "Allow"
+    actions = ["sts:AssumeRoleWithWebIdentity"]
+
+    principals {
+      type        = "Federated"
+      identifiers = ["<cluster-oidc-provider-arn>"]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "<oidc-provider-id>:sub"
+      values   = ["system:serviceaccount:mcd-agent:mcd-agent-service-account"]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "<oidc-provider-id>:aud"
+      values   = ["sts.amazonaws.com"]
+    }
+  }
+}
+```
 
 This pairs naturally with bring-your-own clusters (`cluster.create = false`), where the
 customer may prefer — or be restricted to — authoring IAM roles in their own Terraform.
 
 When reusing a pre-existing External Secrets Operator
-(`helm.install_external_secrets_operator = false`), pass its role so the agent's
-SecretStore can sync through it:
+(`helm.install_external_secrets_operator = false`), pass its IAM role as
+`identity.existing_eso_role_arn` — the role the operator already runs under — so the
+agent's SecretStore can sync through it. This is required in `irsa` mode and strongly
+recommended in `pod_identity` mode: without it the module creates a Pod Identity
+association on the shared `external-secrets` service account, rebinding the existing
+operator away from its current identity. The role itself needs no modification — the
+module's secrets-access role trusts it directly (a same-account `sts:AssumeRole` needs
+only the trust entry), so the applying principal needs no IAM write permission on it.
 
 ```hcl
 module "mcd_agent" {
@@ -253,7 +318,7 @@ module "mcd_agent" {
   backend_service_url = "<backend_service_url>"
 
   helm = {
-    chart_version                     = "<latest>"
+    chart_version                     = "0.0.2"
     install_external_secrets_operator = false # ESO already runs in this cluster
   }
 
@@ -263,7 +328,7 @@ module "mcd_agent" {
   }
 
   identity = {
-    auth_mode             = "irsa"
+    mode                  = "irsa"
     existing_eso_role_arn = "arn:aws:iam::<account-id>:role/<existing-eso-role>"
   }
 
@@ -274,7 +339,28 @@ module "mcd_agent" {
 ```
 
 `identity.oidc_provider_arn` can override the provider lookup when the provider is
-managed elsewhere (e.g. by the root that owns the cluster).
+managed elsewhere (e.g. by the root that owns the cluster). It must be a full
+OIDC-provider ARN and must be null in `pod_identity` mode — the module validates both.
+
+Supported identity combinations:
+
+| `identity.mode` | `existing_agent_role_arn` | `existing_eso_role_arn` | `install_external_secrets_operator` | Outcome |
+|---|---|---|---|---|
+| `pod_identity` | unset | unset | `true` | Valid (default) |
+| `pod_identity` | unset | unset | `false` | Valid, but rebinds the existing ESO's service account — set `existing_eso_role_arn` instead |
+| `pod_identity` | unset | set | `false` | Valid (recommended with a reused ESO) |
+| `irsa` | unset | unset | `true` | Valid |
+| `irsa` | unset | unset | `false` | Rejected — `existing_eso_role_arn` is required |
+| `irsa` | unset | set | `false` | Valid |
+| either | set | unset | either | Valid — requires `storage.existing_bucket_name` |
+| either | set | set | `false` | Valid — requires `storage.existing_bucket_name` |
+| either | either | set | `true` | Rejected — `existing_eso_role_arn` must be null when the module installs ESO |
+
+Switching `identity.mode` on an existing deployment replaces the module-created agent
+role (its name changes between `<cluster>-pod-identity` and `<cluster>-irsa`) and
+removes the `eks-pod-identity-agent` add-on on module-created clusters — update
+anything referencing the old `pod_identity_role_arn` output and expect the agent pods
+to restart. The mode is effectively chosen at first deploy.
 
 ### Pinning the Kubernetes version and support policy
 
@@ -392,7 +478,7 @@ To autoscale instead of holding a fixed replica count, supply `agent.autoscaling
 
 Supplying the object enables autoscaling; set `enabled = false` to keep the settings without activating the HorizontalPodAutoscaler. When enabled, `replica_count` is ignored, `resources.requests` is required (the HPA uses requests as its utilization baseline, and the module validates this), and `metrics-server` must be installed in the cluster — standard on EKS, AKS, and GKE.
 
-Set these through the `agent` variable rather than `custom_values`. `custom_values` replaces whole sections rather than merging into them, so a `container` map passed there drops the module's backend URL and data store settings.
+Set these through the `agent` variable rather than `custom_values`. `custom_values` replaces whole sections rather than merging into them, so a `container` map passed there drops the module's backend URL and data store settings. The same goes for `serviceAccount`: the module re-applies the IRSA role-arn annotation after merging, but overriding `serviceAccount.name` invalidates the `:sub` condition in the role's trust policy, breaking IRSA.
 
 ## After Deployment
 
@@ -466,8 +552,10 @@ kubectl exec -n mcd-agent deploy/mcd-agent-deployment -- \
 | cluster_endpoint            | Endpoint for EKS control plane                       |
 | cluster_name                | EKS cluster name                                     |
 | storage_bucket_name         | S3 bucket name for agent storage                     |
-| pod_identity_role_arn       | IAM role ARN for pod identity                        |
-| eso_role_arn                | IAM role ARN for External Secrets Operator            |
+| agent_role_arn              | Effective IAM role ARN bound to the agent's service account |
+| agent_service_account_name  | Name of the agent's Kubernetes service account        |
+| pod_identity_role_arn       | Deprecated alias for `agent_role_arn`                |
+| eso_role_arn                | Effective IAM role ARN for the External Secrets Operator — equals the supplied `identity.existing_eso_role_arn` when a pre-existing ESO is used |
 | mcd_secrets_access_role_arn | IAM role ARN for ESO to access Secrets Manager       |
 | mcd_agent_token_secret_arn  | ARN of the Secrets Manager secret for the agent token |
 | mcd_agent_oauth_secret_arn  | ARN of the Secrets Manager secret for OAuth credentials |

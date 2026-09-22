@@ -9,10 +9,12 @@ locals {
     "mcd-agent-deployment-type" = lower(local.mcd_agent_deployment_type)
   })
 
-  cluster_name           = var.cluster.name != null ? var.cluster.name : "mcd-agent-${random_id.mcd_agent_id.hex}"
-  effective_cluster_name = var.cluster.create ? module.eks[0].cluster_name : var.cluster.existing_cluster_name
-  namespace              = var.agent.namespace
-  service_account_name   = "mcd-agent-service-account"
+  cluster_name             = var.cluster.name != null ? var.cluster.name : "mcd-agent-${random_id.mcd_agent_id.hex}"
+  effective_cluster_name   = var.cluster.create ? module.eks[0].cluster_name : var.cluster.existing_cluster_name
+  namespace                = var.agent.namespace
+  service_account_name     = "mcd-agent-service-account"
+  eso_namespace            = "external-secrets"
+  eso_service_account_name = "external-secrets"
 
   mcd_agent_store_name        = "mcd-agent-store-${random_id.mcd_agent_id.hex}"
   mcd_agent_store_data_prefix = "mcd/"
@@ -31,45 +33,32 @@ locals {
 
   # --- Identity (Pod Identity vs IRSA) ---
 
-  use_irsa = coalesce(var.identity.auth_mode, "pod_identity") == "irsa"
+  use_irsa = var.identity.mode == "irsa"
 
-  # The agent pod's role: the customer's own (identity.existing_agent_role_arn)
-  # or the module-managed one created below. When the customer supplies a role
-  # the module creates no agent role and no S3 policy — the customer's role
-  # must carry the agent's permissions itself (documented in object-storage).
   creating_agent_role = var.identity.existing_agent_role_arn == null
-  agent_role_arn      = var.identity.existing_agent_role_arn != null ? var.identity.existing_agent_role_arn : aws_iam_role.pod_identity[0].arn
+  agent_role_arn      = var.identity.existing_agent_role_arn != null ? var.identity.existing_agent_role_arn : aws_iam_role.agent[0].arn
 
-  # The module's ESO role is only useful when the module installs (and binds)
-  # its own ESO, or when nothing else supplies the ESO identity. When a
-  # pre-existing ESO's role is supplied (identity.existing_eso_role_arn), the
-  # module-created role would be dead weight — and can collide with the
-  # existing role's name (both conventionally "<cluster>-eso-role"), so it is
-  # skipped entirely in that combination.
-  creating_eso_role = var.helm.install_external_secrets_operator || var.identity.existing_eso_role_arn == null
-  eso_role_arn      = one(aws_iam_role.eso_role[*].arn)
+  # Skipped when a pre-existing ESO role is supplied: the module's role would
+  # be unused, and its name collides with the existing "<cluster>-eso-role".
+  creating_eso_role      = var.helm.install_external_secrets_operator || var.identity.existing_eso_role_arn == null
+  eso_role_arn           = one(aws_iam_role.eso_role[*].arn)
+  effective_eso_role_arn = coalesce(local.eso_role_arn, var.identity.existing_eso_role_arn)
 
-  # The cluster's IAM OIDC identity provider, needed only in irsa mode. An
-  # explicit identity.oidc_provider_arn wins; otherwise the module-created
-  # cluster's provider, or a lookup by the existing cluster's issuer URL —
-  # which fails at plan time when the cluster has no OIDC provider in IAM,
-  # the intended fail-fast for clusters that never enabled IRSA.
   oidc_provider_arn = (
     var.identity.oidc_provider_arn != null ? var.identity.oidc_provider_arn :
     var.cluster.create ? module.eks[0].oidc_provider_arn :
     one(data.aws_iam_openid_connect_provider.existing[*].arn)
   )
 
-  # Host/path portion of the issuer URL (no scheme), as used in the
-  # trust-policy :sub / :aud condition variable names.
-  oidc_provider_id = replace(
-    var.cluster.create ? module.eks[0].oidc_provider : data.aws_eks_cluster.existing[0].identity[0].oidc[0].issuer,
-    "https://", ""
-  )
+  # Issuer host/path as used in the :sub / :aud condition keys; derived from
+  # the ARN so the provider pair can never disagree. Falls back to a sentinel
+  # when no provider is in play (pod_identity mode, or irsa with both roles
+  # customer-supplied): irsa_trust_policy is eagerly evaluated in every
+  # permutation, but in those it is never attached to any role.
+  oidc_provider_id = try(split("oidc-provider/", local.oidc_provider_arn)[1], "no-oidc-provider")
 
-  # IRSA trust policies, one per service account. Referenced only when
-  # use_irsa is true; in pod_identity mode the Federated principal resolves to
-  # null but the policy is never attached to anything.
+  # Referenced only when use_irsa; in pod_identity mode the Federated principal
+  # resolves to null but the policy is never attached to anything.
   irsa_trust_policy = {
     agent = jsonencode({
       Version = "2012-10-17"
@@ -93,7 +82,7 @@ locals {
         Principal = { Federated = local.oidc_provider_arn }
         Condition = {
           StringEquals = {
-            "${local.oidc_provider_id}:sub" = "system:serviceaccount:external-secrets:external-secrets"
+            "${local.oidc_provider_id}:sub" = "system:serviceaccount:${local.eso_namespace}:${local.eso_service_account_name}"
             "${local.oidc_provider_id}:aud" = ["sts.amazonaws.com"]
           }
         }
@@ -122,10 +111,14 @@ data "aws_eks_cluster_auth" "cluster" {
 
 # IRSA on an existing cluster: look up the cluster's IAM OIDC identity provider
 # by issuer URL. Plan fails when none exists — the cluster must have IRSA
-# enabled before auth_mode = "irsa" can be used.
+# enabled before mode = "irsa" can be used. Skipped when no IRSA role is
+# created (both roles customer-supplied), so no lookup permissions are needed.
 data "aws_iam_openid_connect_provider" "existing" {
-  count = !var.cluster.create && local.use_irsa && var.identity.oidc_provider_arn == null ? 1 : 0
-  url   = data.aws_eks_cluster.existing[0].identity[0].oidc[0].issuer
+  count = (
+    !var.cluster.create && local.use_irsa && var.identity.oidc_provider_arn == null &&
+    (local.creating_agent_role || local.creating_eso_role)
+  ) ? 1 : 0
+  url = data.aws_eks_cluster.existing[0].identity[0].oidc[0].issuer
 }
 
 # -----------------------------------------------------------------------------
@@ -319,13 +312,20 @@ data "aws_iam_policy_document" "assume_role" {
   }
 }
 
-resource "aws_iam_role" "pod_identity" {
+resource "aws_iam_role" "agent" {
+  # Skipped when the customer supplies their own agent role: the module's role
+  # would be unused, and their role must carry the agent's permissions itself.
   count = local.creating_agent_role ? 1 : 0
 
   name = local.use_irsa ? "${local.effective_cluster_name}-irsa" : "${local.effective_cluster_name}-pod-identity"
 
   assume_role_policy = local.use_irsa ? local.irsa_trust_policy.agent : data.aws_iam_policy_document.assume_role.json
   tags               = local.default_tags
+}
+
+moved {
+  from = aws_iam_role.pod_identity
+  to   = aws_iam_role.agent
 }
 
 resource "aws_eks_pod_identity_association" "agent_association" {
@@ -368,7 +368,7 @@ resource "aws_iam_role_policy" "mcd_agent_service_s3_policy" {
       }
     ]
   })
-  role = aws_iam_role.pod_identity[0].id
+  role = aws_iam_role.agent[0].id
 }
 
 # -----------------------------------------------------------------------------
@@ -388,28 +388,28 @@ resource "aws_iam_role" "eso_role" {
 }
 
 resource "aws_eks_pod_identity_association" "eso_association" {
-  # Skipped in irsa mode (annotation binds the module-installed ESO instead),
-  # and also when the module's ESO role is not created because a pre-existing
-  # ESO is consumed via identity.existing_eso_role_arn — that ESO keeps its own
-  # binding, and the assume-grant on the existing role covers the SecretStore
-  # chain. Without this guard the association would reference a null role ARN.
+  # Skipped in irsa mode (annotation binds ESO instead) and when the module's
+  # ESO role is not created — without this guard the association gets a null
+  # role ARN.
   count = local.use_irsa || !local.creating_eso_role ? 0 : 1
 
   cluster_name    = local.effective_cluster_name
-  namespace       = "external-secrets"
-  service_account = "external-secrets"
+  namespace       = local.eso_namespace
+  service_account = local.eso_service_account_name
   role_arn        = local.eso_role_arn
   tags            = local.default_tags
 }
 
+# A supplied ESO role needs no modification: this trust policy names it
+# directly, and a same-account sts:AssumeRole requires no identity-side grant
+# on the target role.
 data "aws_iam_policy_document" "eso_assume_role" {
   statement {
     effect = "Allow"
 
     principals {
       type = "AWS"
-      # The module's own ESO role, plus — when an existing ESO is reused —
-      # the identity.existing_eso_role_arn it actually runs under.
+      # compact: either ARN is null depending on which ESO is in play.
       identifiers = compact([local.eso_role_arn, var.identity.existing_eso_role_arn])
     }
 
@@ -418,37 +418,6 @@ data "aws_iam_policy_document" "eso_assume_role" {
       "sts:TagSession"
     ]
   }
-}
-
-# When the agent reuses a pre-existing ESO (helm.install_external_secrets_operator
-# = false), that ESO runs under a role the module does not own. Grant it
-# sts:AssumeRole on the module's secrets-access role so the agent's SecretStore
-# can sync through it. Additive and Terraform-managed — no out-of-band edits.
-data "aws_iam_role" "existing_eso" {
-  count = var.identity.existing_eso_role_arn != null ? 1 : 0
-  # The data source looks up by name; extract it from the provided ARN. (IAM
-  # role names cannot contain "/", so the last path segment is the name.)
-  name = element(regex("role/([^/]+)$", var.identity.existing_eso_role_arn), 0)
-}
-
-resource "aws_iam_role_policy" "existing_eso_assume_mcd_secrets" {
-  count = var.identity.existing_eso_role_arn != null ? 1 : 0
-  name  = "assume-mcd-agent-secrets-access"
-  role  = data.aws_iam_role.existing_eso[0].name
-
-  policy = jsonencode({
-    "Version" : "2012-10-17",
-    "Statement" : [
-      {
-        "Action" : [
-          "sts:AssumeRole",
-          "sts:TagSession"
-        ],
-        "Resource" : aws_iam_role.mcd_secrets_access_role.arn,
-        "Effect" : "Allow"
-      }
-    ]
-  })
 }
 
 resource "aws_iam_role" "mcd_secrets_access_role" {
@@ -558,12 +527,9 @@ resource "helm_release" "external_secrets" {
   name             = "external-secrets"
   repository       = "https://charts.external-secrets.io"
   chart            = "external-secrets"
-  namespace        = "external-secrets"
+  namespace        = local.eso_namespace
   create_namespace = true
 
-  # In irsa mode, bind the ESO service account to the module's ESO role via
-  # the standard eks.amazonaws.com/role-arn annotation instead of an EKS Pod
-  # Identity association.
   values = local.use_irsa ? [
     yamlencode({
       serviceAccount = {
@@ -656,15 +622,20 @@ locals {
     }
   }
 
-  # In irsa mode, bind the agent's service account to the module's IAM role
-  # via the standard eks.amazonaws.com/role-arn annotation instead of an EKS
-  # Pod Identity association.
-  identity_helm_values = local.use_irsa ? {
-    serviceAccount = {
-      annotations = {
-        "eks.amazonaws.com/role-arn" = local.agent_role_arn
+  # In irsa mode the eks.amazonaws.com/role-arn annotation is the whole
+  # identity mechanism. Re-applied after custom_values in helm_values with a
+  # nested merge so a caller's own serviceAccount settings survive without
+  # dropping the annotation.
+  aws_identity_helm_values = local.use_irsa ? {
+    serviceAccount = merge(
+      try(var.custom_values.serviceAccount, {}),
+      {
+        annotations = merge(
+          try(var.custom_values.serviceAccount.annotations, {}),
+          { "eks.amazonaws.com/role-arn" = local.agent_role_arn }
+        )
       }
-    }
+    )
   } : {}
 
   base_helm_values = merge(
@@ -710,8 +681,7 @@ locals {
       metricsCollector = { enabled = var.helm.enabled_metrics_collector }
     },
     local.agent_autoscaling_values,
-    local.auth_helm_values,
-    local.identity_helm_values
+    local.auth_helm_values
   )
 
   # Merge custom_values over base, then re-apply typed module fields
@@ -722,7 +692,7 @@ locals {
       try(var.custom_values.metricsCollector, {}),
       { enabled = var.helm.enabled_metrics_collector }
     )
-  })
+  }, local.aws_identity_helm_values)
 
   helm_values_yaml = yamlencode(local.helm_values)
 }
