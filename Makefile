@@ -8,6 +8,9 @@ sanity-check:
 	terraform init -backend=false
 	terraform fmt -recursive -check -diff
 	terraform validate
+	# Run the module test suite. Every run plans against fully mocked
+	# providers, so no AWS credentials are needed.
+	terraform test
 	# Validate each example.
 	for d in examples/*/; do \
 		terraform -chdir=$$d init -backend=false && \

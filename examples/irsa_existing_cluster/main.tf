@@ -12,10 +12,14 @@ module "mcd_on_prem_agent" {
     install_external_secrets_operator = false
   }
 
-  # Use an existing EKS cluster
+  # Use an existing EKS cluster — and no VPC of our own: the agent runs in
+  # the cluster's existing VPC, so creating one here would be dead weight.
   cluster = {
     create                = false
     existing_cluster_name = "my-existing-cluster"
+  }
+  networking = {
+    create_vpc = false
   }
 
   # IRSA instead of EKS Pod Identity, reusing the cluster's existing

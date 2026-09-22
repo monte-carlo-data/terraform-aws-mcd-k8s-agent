@@ -38,11 +38,13 @@ locals {
   creating_agent_role = var.identity.existing_agent_role_arn == null
   agent_role_arn      = var.identity.existing_agent_role_arn != null ? var.identity.existing_agent_role_arn : aws_iam_role.agent[0].arn
 
-  # Skipped when a pre-existing ESO role is supplied: the module's role would
-  # be unused, and its name collides with the existing "<cluster>-eso-role".
-  creating_eso_role      = var.helm.install_external_secrets_operator || var.identity.existing_eso_role_arn == null
+  # Created only when the module installs its own ESO release: a pre-existing
+  # operator already runs under identity.existing_eso_role_arn (required by
+  # validation whenever one is reused), and the module's role would be unused
+  # while colliding by name with the existing "<cluster>-eso-role".
+  creating_eso_role      = var.helm.install_external_secrets_operator
   eso_role_arn           = one(aws_iam_role.eso_role[*].arn)
-  effective_eso_role_arn = coalesce(local.eso_role_arn, var.identity.existing_eso_role_arn)
+  effective_eso_role_arn = local.creating_eso_role ? local.eso_role_arn : var.identity.existing_eso_role_arn
 
   oidc_provider_arn = (
     var.identity.oidc_provider_arn != null ? var.identity.oidc_provider_arn :
@@ -384,16 +386,17 @@ resource "aws_iam_role" "eso_role" {
   name = "${local.effective_cluster_name}-eso-role"
 
   # In irsa mode this role is bound by the service-account annotation on the
-  # module-installed ESO release; with a pre-existing ESO it is unused and
-  # identity.existing_eso_role_arn takes over instead (see above).
+  # module-installed ESO release; with a pre-existing ESO it is not created at
+  # all and identity.existing_eso_role_arn takes over instead (see above).
   assume_role_policy = local.use_irsa ? local.irsa_trust_policy.eso : data.aws_iam_policy_document.assume_role.json
   tags               = local.default_tags
 }
 
 resource "aws_eks_pod_identity_association" "eso_association" {
-  # Skipped in irsa mode (annotation binds ESO instead) and when the module's
-  # ESO role is not created — without this guard the association gets a null
-  # role ARN.
+  # Created only for the module-installed ESO in pod_identity mode: in irsa
+  # mode the annotation binds ESO instead, and a pre-existing operator must
+  # keep whatever identity it already uses — this association would rebind the
+  # shared external-secrets service account away from it.
   count = local.use_irsa || !local.creating_eso_role ? 0 : 1
 
   cluster_name    = local.effective_cluster_name

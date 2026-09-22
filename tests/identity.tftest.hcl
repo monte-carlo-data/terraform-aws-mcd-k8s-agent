@@ -214,7 +214,82 @@ run "byo_agent_role" {
   }
 }
 
-run "custom_service_account_preserves_irsa_annotation" {
+run "irsa_with_module_created_cluster" {
+  command = plan
+
+  # module.eks[0].oidc_provider_arn is computed — unknown at plan time — so
+  # this run pins down that the IRSA path plans cleanly against it (trust
+  # policies and the Helm annotation reference it without forcing it).
+  variables {
+    identity = {
+      mode = "irsa"
+    }
+    cluster = {
+      create = true
+    }
+  }
+
+  assert {
+    condition     = length(aws_eks_pod_identity_association.agent_association) == 0
+    error_message = "irsa mode must not create the agent Pod Identity association on a module-created cluster."
+  }
+
+  assert {
+    condition     = length(aws_eks_pod_identity_association.eso_association) == 0
+    error_message = "irsa mode must not create the ESO Pod Identity association on a module-created cluster."
+  }
+
+  assert {
+    condition     = length(aws_iam_role.agent) == 1 && length(aws_iam_role.eso_role) == 1
+    error_message = "irsa mode on a module-created cluster must still create both module-managed roles."
+  }
+}
+
+run "irsa_with_both_existing_roles" {
+  command = plan
+
+  # Both roles customer-supplied: no OIDC provider is in play, so the lookup
+  # data source must be skipped (no iam:ListOpenIDConnectProviders permission
+  # needed) and the eagerly-evaluated trust policies fall back to the
+  # "no-oidc-provider" sentinel without ever being attached.
+  variables {
+    identity = {
+      mode                    = "irsa"
+      existing_agent_role_arn = "arn:aws:iam::123456789012:role/my-agent"
+      existing_eso_role_arn   = "arn:aws:iam::123456789012:role/external-secrets"
+    }
+    storage = {
+      create_bucket        = false
+      existing_bucket_name = "my-bucket"
+    }
+    helm = {
+      chart_version                     = "0.0.2"
+      install_external_secrets_operator = false
+    }
+  }
+
+  assert {
+    condition     = length(data.aws_iam_openid_connect_provider.existing) == 0
+    error_message = "No OIDC provider lookup may happen when both roles are customer-supplied."
+  }
+
+  assert {
+    condition     = local.oidc_provider_id == "no-oidc-provider"
+    error_message = "The OIDC provider id must fall back to the sentinel when no provider is in play."
+  }
+
+  assert {
+    condition     = length(aws_iam_role.agent) == 0 && length(aws_iam_role.eso_role) == 0
+    error_message = "No module-managed roles may be created when both roles are customer-supplied."
+  }
+
+  assert {
+    condition     = output.agent_role_arn == "arn:aws:iam::123456789012:role/my-agent" && output.eso_role_arn == "arn:aws:iam::123456789012:role/external-secrets"
+    error_message = "Both role outputs must report the customer-supplied ARNs."
+  }
+}
+
+run "custom_service_account_annotations_merge_with_irsa" {
   command = plan
 
   variables {
@@ -223,21 +298,26 @@ run "custom_service_account_preserves_irsa_annotation" {
     }
     custom_values = {
       serviceAccount = {
-        name = "custom-sa"
+        # The chart only reads serviceAccount.annotations — the name is
+        # hardcoded in its templates — so annotations are what must merge.
+        annotations = {
+          "example.com/annotation" = "value"
+        }
       }
     }
   }
 
   # The IRSA role-arn annotation is re-applied after custom_values with a
-  # nested merge, so both the annotation and the caller's service account name
-  # must survive into the rendered values.
+  # nested merge, so both it and the caller's own annotations must survive
+  # into the rendered values. Key presence is asserted (not the value) because
+  # the role ARN is computed and unknown at plan time.
   assert {
-    condition     = length(local.aws_identity_helm_values.serviceAccount.annotations) >= 1
+    condition     = contains(keys(local.helm_values.serviceAccount.annotations), "eks.amazonaws.com/role-arn")
     error_message = "The eks.amazonaws.com/role-arn annotation must survive merging custom_values into the agent Helm values."
   }
 
   assert {
-    condition     = try(local.helm_values.serviceAccount.name, null) == "custom-sa"
-    error_message = "The caller's serviceAccount.name must survive the module re-applying the IRSA annotation."
+    condition     = try(local.helm_values.serviceAccount.annotations["example.com/annotation"], null) == "value"
+    error_message = "The caller's own serviceAccount.annotations must survive the module re-applying the IRSA annotation."
   }
 }

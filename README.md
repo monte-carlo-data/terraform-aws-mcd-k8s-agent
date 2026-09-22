@@ -304,12 +304,14 @@ customer may prefer — or be restricted to — authoring IAM roles in their own
 When reusing a pre-existing External Secrets Operator
 (`helm.install_external_secrets_operator = false`), pass its IAM role as
 `identity.existing_eso_role_arn` — the role the operator already runs under — so the
-agent's SecretStore can sync through it. This is required in `irsa` mode and strongly
-recommended in `pod_identity` mode: without it the module creates a Pod Identity
-association on the shared `external-secrets` service account, rebinding the existing
-operator away from its current identity. The role itself needs no modification — the
-module's secrets-access role trusts it directly (a same-account `sts:AssumeRole` needs
-only the trust entry), so the applying principal needs no IAM write permission on it.
+agent's SecretStore can sync through it. This is **required in both modes** (the module
+validates it): in `irsa` mode the agent's SecretStore has no identity to read its token
+secret through without it, and in `pod_identity` mode the module would otherwise create
+a Pod Identity association on the shared `external-secrets` service account, rebinding
+the existing operator away from its current identity. The role itself needs no
+modification — the module's secrets-access role trusts it directly (a same-account
+`sts:AssumeRole` needs only the trust entry), so the applying principal needs no IAM
+write permission on it.
 
 ```hcl
 module "mcd_agent" {
@@ -478,7 +480,7 @@ To autoscale instead of holding a fixed replica count, supply `agent.autoscaling
 
 Supplying the object enables autoscaling; set `enabled = false` to keep the settings without activating the HorizontalPodAutoscaler. When enabled, `replica_count` is ignored, `resources.requests` is required (the HPA uses requests as its utilization baseline, and the module validates this), and `metrics-server` must be installed in the cluster — standard on EKS, AKS, and GKE.
 
-Set these through the `agent` variable rather than `custom_values`. `custom_values` replaces whole sections rather than merging into them, so a `container` map passed there drops the module's backend URL and data store settings. The same goes for `serviceAccount`: the module re-applies the IRSA role-arn annotation after merging, but overriding `serviceAccount.name` invalidates the `:sub` condition in the role's trust policy, breaking IRSA.
+Set these through the `agent` variable rather than `custom_values`. `custom_values` replaces whole sections rather than merging into them, so a `container` map passed there drops the module's backend URL and data store settings. The same goes for `serviceAccount`: the module re-applies the IRSA role-arn annotation after merging, so a caller's own `serviceAccount.annotations` survive alongside it. Note that `serviceAccount.name` is not a chart value at all — the chart hardcodes the name (`mcd-agent-service-account`) in its templates and only reads `serviceAccount.annotations` — so the name cannot be overridden, and the module's trust-policy `:sub` condition always matches.
 
 ## After Deployment
 

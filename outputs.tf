@@ -44,7 +44,7 @@ output "agent_service_account_name" {
 }
 
 output "eso_role_arn" {
-  description = "IAM role the External Secrets Operator runs as — module-created, or the customer-supplied identity.existing_eso_role_arn when a pre-existing ESO is reused."
+  description = "IAM role the External Secrets Operator runs as — module-created when the module installs the ESO release, the customer-supplied identity.existing_eso_role_arn when a pre-existing ESO is reused, and null when the module deploys no ESO at all (helm.deploy_agent = false with no ESO install)."
   value       = local.effective_eso_role_arn
 }
 
@@ -89,7 +89,7 @@ output "vpc_endpoint_ids" {
 }
 
 output "helm_values" {
-  description = "Helm values used for agent deployment. Use these for manual Helm deployment when deploy_agent is false. Contains the agent's authentication credentials."
+  description = "Helm values used for agent deployment. Use these for manual Helm deployment when deploy_agent is false. Marked sensitive because it is derived from sensitive inputs (oauth_credentials / token_credentials); the values themselves carry only secret names and remote references, never credential contents."
   value       = local.helm_values_yaml
   sensitive   = true
 }

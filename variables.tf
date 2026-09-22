@@ -211,12 +211,11 @@ variable "identity" {
 
   validation {
     condition = (
-      var.identity.mode == "pod_identity" ||
       var.helm.install_external_secrets_operator ||
       !var.helm.deploy_agent ||
       var.identity.existing_eso_role_arn != null
     )
-    error_message = "identity.existing_eso_role_arn is required when mode = \"irsa\" and an existing External Secrets Operator is reused (helm.install_external_secrets_operator = false): without it the agent's SecretStore has no identity to read its token secret through."
+    error_message = "identity.existing_eso_role_arn is required when an existing External Secrets Operator is reused (helm.install_external_secrets_operator = false) while the agent is deployed: in irsa mode the agent's SecretStore has no identity to read its token secret through, and in pod_identity mode the module's Pod Identity association would rebind the shared external-secrets service account away from the identity the existing operator already uses."
   }
 
   validation {

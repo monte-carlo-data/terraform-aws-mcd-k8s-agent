@@ -106,6 +106,22 @@ run "requires_eso_role_arn_in_irsa_with_existing_eso" {
   expect_failures = [var.identity]
 }
 
+run "requires_eso_role_arn_in_pod_identity_with_existing_eso" {
+  command = plan
+
+  # The default mode must not leave the hijack reachable either: the module's
+  # Pod Identity association would rebind the shared external-secrets service
+  # account away from the identity the pre-existing operator already uses.
+  variables {
+    helm = {
+      chart_version                     = "0.0.2"
+      install_external_secrets_operator = false
+    }
+  }
+
+  expect_failures = [var.identity]
+}
+
 run "accepts_irsa_with_eso_role_arn" {
   command = plan
 
