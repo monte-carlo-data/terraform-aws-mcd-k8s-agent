@@ -35,8 +35,12 @@ locals {
 
   use_irsa = var.identity.mode == "irsa"
 
-  creating_agent_role = var.identity.existing_agent_role_arn == null
-  agent_role_arn      = var.identity.existing_agent_role_arn != null ? var.identity.existing_agent_role_arn : aws_iam_role.agent[0].arn
+  # Explicit create_agent_role wins; otherwise inferred from whether a role ARN
+  # was supplied. Every count keyed on this must be known at plan time, which
+  # the inference is not when the ARN comes from a resource in the caller's
+  # root — hence the explicit flag (see the identity variable).
+  creating_agent_role = coalesce(var.identity.create_agent_role, var.identity.existing_agent_role_arn == null)
+  agent_role_arn      = local.creating_agent_role ? one(aws_iam_role.agent[*].arn) : var.identity.existing_agent_role_arn
 
   # Created only when the module installs its own ESO release: a pre-existing
   # operator already runs under identity.existing_eso_role_arn (required by

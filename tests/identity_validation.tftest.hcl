@@ -217,3 +217,57 @@ run "rejects_oidc_provider_arn_in_pod_identity_mode" {
 
   expect_failures = [var.identity]
 }
+
+run "rejects_create_agent_role_false_without_role_arn" {
+  command = plan
+
+  # The agent needs a role: declining the module's without supplying one fails.
+  variables {
+    identity = {
+      create_agent_role = false
+    }
+    storage = {
+      create_bucket        = false
+      existing_bucket_name = "my-bucket"
+    }
+  }
+
+  expect_failures = [var.identity]
+}
+
+run "rejects_create_agent_role_true_with_role_arn" {
+  command = plan
+
+  # Contradictory: the module would create a role while a supplied one is
+  # silently ignored.
+  variables {
+    identity = {
+      create_agent_role       = true
+      existing_agent_role_arn = "arn:aws:iam::123456789012:role/agent"
+    }
+    storage = {
+      create_bucket        = false
+      existing_bucket_name = "my-bucket"
+    }
+  }
+
+  expect_failures = [var.identity]
+}
+
+run "requires_existing_bucket_with_create_agent_role_false" {
+  command = plan
+
+  # Same bucket requirement as a supplied role ARN, keyed on the flag so it holds
+  # even when the ARN is unknown at plan time (the ARN-keyed rule then goes
+  # unevaluated and the plan would pass silently). This run uses a known ARN, so
+  # the ARN-keyed rule rejects it too; expect_failures cannot reach the nested
+  # module in tests/fixtures, so the unknown-ARN case was verified by hand.
+  variables {
+    identity = {
+      create_agent_role       = false
+      existing_agent_role_arn = "arn:aws:iam::123456789012:role/agent"
+    }
+  }
+
+  expect_failures = [var.identity]
+}
