@@ -217,3 +217,55 @@ run "rejects_oidc_provider_arn_in_pod_identity_mode" {
 
   expect_failures = [var.identity]
 }
+
+run "rejects_create_agent_role_false_without_role_arn" {
+  command = plan
+
+  # The agent needs a role: declining the module's without supplying one fails.
+  variables {
+    identity = {
+      create_agent_role = false
+    }
+    storage = {
+      create_bucket        = false
+      existing_bucket_name = "my-bucket"
+    }
+  }
+
+  expect_failures = [var.identity]
+}
+
+run "rejects_create_agent_role_true_with_role_arn" {
+  command = plan
+
+  # Contradictory: the module would create a role while a supplied one is
+  # silently ignored.
+  variables {
+    identity = {
+      create_agent_role       = true
+      existing_agent_role_arn = "arn:aws:iam::123456789012:role/agent"
+    }
+    storage = {
+      create_bucket        = false
+      existing_bucket_name = "my-bucket"
+    }
+  }
+
+  expect_failures = [var.identity]
+}
+
+run "requires_existing_bucket_with_create_agent_role_false" {
+  command = plan
+
+  # The bucket requirement is keyed on the same expression as
+  # local.creating_agent_role, so this run pins it via the explicit flag rather
+  # than relying on existing_agent_role_arn, isolating this one validation.
+  variables {
+    identity = {
+      create_agent_role       = false
+      existing_agent_role_arn = "arn:aws:iam::123456789012:role/agent"
+    }
+  }
+
+  expect_failures = [var.identity]
+}

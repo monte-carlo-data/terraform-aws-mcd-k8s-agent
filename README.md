@@ -249,6 +249,33 @@ permissions on that bucket: the S3 actions from the
 `secretsmanager:GetSecretValue` on the agent's token secret and any integration
 secrets — one role may cover both.
 
+**Creating the role in the same configuration.** If the role is a resource in the same
+root as this module, its ARN is unknown until apply, and Terraform must know at plan time
+whether the module creates a role of its own (otherwise the plan fails with *Invalid count
+argument*). Say so explicitly with `identity.create_agent_role = false`:
+
+```hcl
+resource "aws_iam_role" "mcd_agent" {
+  # ... permissions as described above; trust policy as described below
+}
+
+module "mcd_agent" {
+  # ...
+  identity = {
+    mode                    = "irsa"
+    create_agent_role       = false
+    existing_agent_role_arn = aws_iam_role.mcd_agent.arn
+  }
+}
+```
+
+Leaving `create_agent_role` unset keeps the inferred behavior (the module creates a role
+unless `existing_agent_role_arn` is set), which works whenever the ARN is known at plan time —
+a literal string, a variable, or a data source lookup.
+
+`identity.oidc_provider_arn` has no such flag yet: pass a value known at plan time (a literal,
+variable, or data source) rather than a resource created in the same root.
+
 The role's trust policy must match the identity mode. These examples assume the default
 namespace (`mcd-agent`); the service-account name is also available as the
 `agent_service_account_name` output.
@@ -349,14 +376,19 @@ Supported identity combinations:
 | `identity.mode` | `existing_agent_role_arn` | `existing_eso_role_arn` | `install_external_secrets_operator` | Outcome |
 |---|---|---|---|---|
 | `pod_identity` | unset | unset | `true` | Valid (default) |
-| `pod_identity` | unset | unset | `false` | Valid, but rebinds the existing ESO's service account — set `existing_eso_role_arn` instead |
+| `pod_identity` | unset | unset | `false` | Rejected — `existing_eso_role_arn` is required (the module's Pod Identity association would otherwise rebind the existing ESO's service account) |
 | `pod_identity` | unset | set | `false` | Valid (recommended with a reused ESO) |
 | `irsa` | unset | unset | `true` | Valid |
 | `irsa` | unset | unset | `false` | Rejected — `existing_eso_role_arn` is required |
 | `irsa` | unset | set | `false` | Valid |
-| either | set | unset | either | Valid — requires `storage.existing_bucket_name` |
+| either | set | unset | `true` | Valid — requires `storage.existing_bucket_name` |
+| either | set | unset | `false` | Rejected — `existing_eso_role_arn` is required |
 | either | set | set | `false` | Valid — requires `storage.existing_bucket_name` |
 | either | either | set | `true` | Rejected — `existing_eso_role_arn` must be null when the module installs ESO |
+
+`identity.create_agent_role` does not change any outcome above: unset, it is inferred from
+`existing_agent_role_arn`; set, it must agree with it (`false` requires the ARN, `true`
+forbids it), and `false` also requires `storage.existing_bucket_name`.
 
 Switching `identity.mode` on an existing deployment replaces the module-created agent
 role (its name changes between `<cluster>-pod-identity` and `<cluster>-irsa`) and

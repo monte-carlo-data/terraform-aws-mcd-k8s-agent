@@ -1,6 +1,8 @@
 # Plan-level coverage for the identity modes: role/association creation,
 # effective-role outputs, and the Helm values merge in irsa mode. All runs plan
-# against fully mocked providers, so no AWS/EKS credentials are needed.
+# without touching real infrastructure: providers are mocked at the file level,
+# and the one run that nests the module (whose own providers aren't covered by
+# those mocks) overrides its resources instead. No AWS/EKS credentials needed.
 
 mock_provider "aws" {
   mock_data "aws_partition" {
@@ -34,12 +36,14 @@ mock_provider "aws" {
     }
   }
 
-  # The root module base64-decodes the cluster CA, so the mock must return
-  # decodable data rather than a placeholder string.
+  # The root module base64-decodes the cluster CA, and the same_root_agent_role
+  # fixture nests the module, so its own kubernetes provider runs unmocked and
+  # (kubernetes provider >= 3.2) rejects anything but a real PEM. The value is a
+  # throwaway self-signed certificate (CN=mock-eks-ca; private key discarded).
   mock_data "aws_eks_cluster" {
     defaults = {
       endpoint              = "https://test-cluster.eks.us-east-1.amazonaws.com"
-      certificate_authority = [{ data = "dGVzdA==" }]
+      certificate_authority = [{ data = "LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCk1JSUJnekNDQVNtZ0F3SUJBZ0lVSGJYQnkxY2E4WXg1MHg5ZW5LbUhuMjJLSjFzd0NnWUlLb1pJemowRUF3SXcKRmpFVU1CSUdBMVVFQXd3TGJXOWpheTFsYTNNdFkyRXdJQmNOTWpZd09USXpNVEkwTkRFM1doZ1BNakV5TmpBNApNekF4TWpRME1UZGFNQll4RkRBU0JnTlZCQU1NQzIxdlkyc3RaV3R6TFdOaE1Ga3dFd1lIS29aSXpqMENBUVlJCktvWkl6ajBEQVFjRFFnQUUzRzFSR3hQN0tsemptYW8wakJNZ05vTitDQ1VPMnYzNUpqWHI3eXd2am5NTERxOE0KbU1idDF6QXZ1UnNqSkd0Y1prSm1ka2RZaGt3bUM2QWZZM3hQTTZOVE1GRXdIUVlEVlIwT0JCWUVGTHdER1hpMgptZnF3N09KMVJUNzNQUWI4NFpON01COEdBMVVkSXdRWU1CYUFGTHdER1hpMm1mcXc3T0oxUlQ3M1BRYjg0Wk43Ck1BOEdBMVVkRXdFQi93UUZNQU1CQWY4d0NnWUlLb1pJemowRUF3SURTQUF3UlFJaEFMMUpuZU43WG5ubEZsWTIKczFtcVovZzUrNHBRalEwaWxvUmUybjdXaXNQZUFpQjlqV1Q0SmVpcjEycTBEbEIyMHl0a3NBQ1Mrdmpma29qQwpyLzdBUiszRlBBPT0KLS0tLS1FTkQgQ0VSVElGSUNBVEUtLS0tLQo=" }]
       identity              = [{ oidc = [{ issuer = "https://oidc.eks.us-east-1.amazonaws.com/id/test" }] }]
     }
   }
@@ -319,5 +323,90 @@ run "custom_service_account_annotations_merge_with_irsa" {
   assert {
     condition     = try(local.helm_values.serviceAccount.annotations["example.com/annotation"], null) == "value"
     error_message = "The caller's own serviceAccount.annotations must survive the module re-applying the IRSA annotation."
+  }
+}
+
+run "byo_agent_role_created_in_same_root" {
+  command = plan
+
+  # Same-root role: .arn is unknown at plan time, so create_agent_role = false must
+  # keep every count known. Planning successfully IS the assertion — outputs derived
+  # from the unknown ARN can't be compared at plan time.
+  module {
+    source = "./tests/fixtures/same_root_agent_role"
+  }
+
+  variables {
+    create_agent_role = false
+  }
+
+  # The fixture nests the module, so its own helm/kubernetes providers run
+  # unmocked (the file-level mock_provider blocks don't reach them). Override
+  # their resources so the plan stays offline instead of reaching a real
+  # cluster or fetching the chart from oci://registry-1.docker.io.
+  override_resource {
+    target = module.mcd_agent.helm_release.external_secrets
+  }
+
+  override_resource {
+    target = module.mcd_agent.helm_release.mcd_agent
+  }
+
+  override_resource {
+    target = module.mcd_agent.kubernetes_namespace_v1.mcd_agent
+  }
+}
+
+run "byo_agent_role_with_explicit_create_flag" {
+  command = plan
+
+  # The explicit flag with a known ARN must behave exactly like the inferred
+  # byo_agent_role run.
+  variables {
+    identity = {
+      create_agent_role       = false
+      existing_agent_role_arn = "arn:aws:iam::123456789012:role/my-agent"
+      existing_eso_role_arn   = "arn:aws:iam::123456789012:role/external-secrets"
+    }
+    storage = {
+      create_bucket        = false
+      existing_bucket_name = "my-bucket"
+    }
+    helm = {
+      chart_version                     = "0.0.2"
+      install_external_secrets_operator = false
+    }
+  }
+
+  assert {
+    condition     = length(aws_iam_role.agent) == 0 && length(aws_iam_role_policy.mcd_agent_service_s3_policy) == 0
+    error_message = "identity.create_agent_role = false must create no agent role and no S3 policy."
+  }
+
+  assert {
+    condition     = output.agent_role_arn == "arn:aws:iam::123456789012:role/my-agent"
+    error_message = "agent_role_arn must equal identity.existing_agent_role_arn when create_agent_role = false."
+  }
+}
+
+run "creates_agent_role_with_explicit_create_flag" {
+  command = plan
+
+  # The explicit flag with no ARN must behave exactly like the inferred
+  # default-create run.
+  variables {
+    identity = {
+      create_agent_role = true
+    }
+  }
+
+  assert {
+    condition     = length(aws_iam_role.agent) == 1
+    error_message = "identity.create_agent_role = true must create the module-managed agent role."
+  }
+
+  assert {
+    condition     = length(aws_iam_role_policy.mcd_agent_service_s3_policy) == 1
+    error_message = "identity.create_agent_role = true must create the S3 inline policy."
   }
 }

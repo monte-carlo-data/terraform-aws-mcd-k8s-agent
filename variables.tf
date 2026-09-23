@@ -195,9 +195,16 @@ variable "identity" {
     "irsa" binds service accounts by annotation through the cluster's OIDC provider. The two
     must never be mixed on one service account. See "Identity: IRSA instead of EKS Pod
     Identity" in the README for the existing-role and OIDC-provider options.
+
+    create_agent_role: whether the module creates the agent's IAM role. Leave unset (null) to
+    infer it — the module creates one unless existing_agent_role_arn is set. Set it to false
+    when existing_agent_role_arn refers to a role created in the same configuration: that ARN
+    is unknown until apply, and Terraform must know at plan time whether the module's own role
+    (and its S3 policy) exist.
   EOT
   type = object({
     mode                    = optional(string, "pod_identity")
+    create_agent_role       = optional(bool, null)
     oidc_provider_arn       = optional(string, null)
     existing_eso_role_arn   = optional(string, null)
     existing_agent_role_arn = optional(string, null)
@@ -239,8 +246,20 @@ variable "identity" {
   }
 
   validation {
-    condition     = var.identity.existing_agent_role_arn == null || var.storage.existing_bucket_name != null
-    error_message = "identity.existing_agent_role_arn requires storage.existing_bucket_name: the module-created bucket's name embeds a random ID that is unknowable before apply, so a pre-authored role cannot be scoped to it."
+    condition     = var.identity.create_agent_role != false || var.identity.existing_agent_role_arn != null
+    error_message = "identity.create_agent_role = false requires identity.existing_agent_role_arn: the agent needs a role, and the module creates none."
+  }
+
+  validation {
+    condition     = var.identity.create_agent_role != true || var.identity.existing_agent_role_arn == null
+    error_message = "identity.create_agent_role = true conflicts with identity.existing_agent_role_arn: either the module creates the agent role, or you supply one."
+  }
+
+  # Mirrors local.creating_agent_role, so it stays known at plan time when
+  # create_agent_role is set, even if existing_agent_role_arn is a same-root resource.
+  validation {
+    condition     = coalesce(var.identity.create_agent_role, var.identity.existing_agent_role_arn == null) || var.storage.existing_bucket_name != null
+    error_message = "A supplied agent role (identity.existing_agent_role_arn, or identity.create_agent_role = false) requires storage.existing_bucket_name: the module-created bucket's name embeds a random ID that is unknowable before apply, so a pre-authored role cannot be scoped to it."
   }
 
   validation {
