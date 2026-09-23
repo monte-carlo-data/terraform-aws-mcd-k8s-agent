@@ -257,11 +257,9 @@ run "rejects_create_agent_role_true_with_role_arn" {
 run "requires_existing_bucket_with_create_agent_role_false" {
   command = plan
 
-  # Same bucket requirement as a supplied role ARN, keyed on the flag so it holds
-  # even when the ARN is unknown at plan time (the ARN-keyed rule then goes
-  # unevaluated and the plan would pass silently). This run uses a known ARN, so
-  # the ARN-keyed rule rejects it too; expect_failures cannot reach the nested
-  # module in tests/fixtures, so the unknown-ARN case was verified by hand.
+  # The bucket requirement is keyed on the same expression as
+  # local.creating_agent_role, so this run pins it via the explicit flag rather
+  # than relying on existing_agent_role_arn, isolating this one validation.
   variables {
     identity = {
       create_agent_role       = false

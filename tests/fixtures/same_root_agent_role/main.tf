@@ -1,16 +1,10 @@
 # Test fixture: a caller that creates the agent's IAM role in the SAME root and
-# passes its .arn to the module — the documented "bring your own role" shape for
-# a customer authoring the role alongside the agent. The role's ARN is computed,
-# so it is unknown at plan time; the module must still plan.
+# passes its .arn to the module. The ARN is computed, so it is unknown at plan
+# time; the module must still plan.
 
 variable "create_agent_role" {
   type    = bool
   default = null
-}
-
-variable "existing_bucket_name" {
-  type    = string
-  default = "my-bucket"
 }
 
 resource "aws_iam_role" "agent" {
@@ -50,7 +44,7 @@ module "mcd_agent" {
 
   storage = {
     create_bucket        = false
-    existing_bucket_name = var.existing_bucket_name
+    existing_bucket_name = "my-bucket"
   }
 
   helm = {

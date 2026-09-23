@@ -255,14 +255,11 @@ variable "identity" {
     error_message = "identity.create_agent_role = true conflicts with identity.existing_agent_role_arn: either the module creates the agent role, or you supply one."
   }
 
+  # Mirrors local.creating_agent_role, so it stays known at plan time when
+  # create_agent_role is set, even if existing_agent_role_arn is a same-root resource.
   validation {
-    condition     = var.identity.create_agent_role != false || var.storage.existing_bucket_name != null
-    error_message = "identity.create_agent_role = false requires storage.existing_bucket_name: the module-created bucket's name embeds a random ID that is unknowable before apply, so a pre-authored role cannot be scoped to it."
-  }
-
-  validation {
-    condition     = var.identity.existing_agent_role_arn == null || var.storage.existing_bucket_name != null
-    error_message = "identity.existing_agent_role_arn requires storage.existing_bucket_name: the module-created bucket's name embeds a random ID that is unknowable before apply, so a pre-authored role cannot be scoped to it."
+    condition     = coalesce(var.identity.create_agent_role, var.identity.existing_agent_role_arn == null) || var.storage.existing_bucket_name != null
+    error_message = "A supplied agent role (identity.existing_agent_role_arn, or identity.create_agent_role = false) requires storage.existing_bucket_name: the module-created bucket's name embeds a random ID that is unknowable before apply, so a pre-authored role cannot be scoped to it."
   }
 
   validation {

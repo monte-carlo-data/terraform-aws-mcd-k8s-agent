@@ -35,10 +35,8 @@ locals {
 
   use_irsa = var.identity.mode == "irsa"
 
-  # Explicit create_agent_role wins; otherwise inferred from whether a role ARN
-  # was supplied. Every count keyed on this must be known at plan time, which
-  # the inference is not when the ARN comes from a resource in the caller's
-  # root — hence the explicit flag (see the identity variable).
+  # Counts keyed on this must be known at plan time; an ARN from a resource in the
+  # caller's root isn't, hence the explicit flag (see var.identity).
   creating_agent_role = coalesce(var.identity.create_agent_role, var.identity.existing_agent_role_arn == null)
   agent_role_arn      = local.creating_agent_role ? one(aws_iam_role.agent[*].arn) : var.identity.existing_agent_role_arn
 

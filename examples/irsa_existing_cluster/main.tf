@@ -28,7 +28,8 @@ module "mcd_on_prem_agent" {
     mode                  = "irsa"
     existing_eso_role_arn = "arn:aws:iam::123456789012:role/external-secrets"
     # To bring your own agent role, also set existing_agent_role_arn and
-    # storage.existing_bucket_name.
+    # storage.existing_bucket_name. If that role is created in this same
+    # configuration, also set create_agent_role = false.
   }
 }
 
